@@ -1,5 +1,6 @@
 import cv2
 import torch
+from PIL import Image
 import numpy as np
 from detectron2.engine import DefaultPredictor
 from detectron2.config import get_cfg
@@ -16,12 +17,12 @@ cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5  # 置信度阈值
 cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
     "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
 )
-cfg.MODEL.DEVICE = "cpu"
+cfg.MODEL.DEVICE = "cuda"
 # 创建预测器
 predictor = DefaultPredictor(cfg)
 
 # 读取图片
-image_path = "./data-unversioned/IMG_7857.jpeg"
+image_path = "./data-unversioned/input2.jpg"
 image = cv2.imread(image_path)
 
 # 推理
@@ -35,3 +36,4 @@ out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
 cv2.imshow("Result", out.get_image()[:, :, ::-1])
 cv2.waitKey(0)
 cv2.destroyAllWindows()
+
