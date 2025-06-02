@@ -7,6 +7,8 @@ from detectron2 import model_zoo
 from pycocotools.coco import COCO
 
 if __name__ == "__main__":
+
+    # 加载数据集
     annotations_file = './data/coco2017/annotations/instances_train2017.json'
     image_files = './data/coco2017/train2017'
     register_coco_instances("train_dataset", 
@@ -14,7 +16,6 @@ if __name__ == "__main__":
         annotations_file, 
         image_files)
 
-    coco = COCO(annotations_file)
 
     # 计算迭代次数 max_iter，detectron2 的迭代次数是指所有 epoch 的迭代次数。
     # 例如，假设每个 epoch 有 1000 个 batch，epoch 数为 10，则 max_iter = 1000 * 10 = 10000。
@@ -23,6 +24,7 @@ if __name__ == "__main__":
     # 框架（包括 Detectron2 和 PyTorch）会自动处理最后一个 batch 的图片数少于
     # 你设置的 IMS_PER_BATCH（即 batch size）的情况。
     # 
+    coco = COCO(annotations_file)
     image_ids = coco.getImgIds()
     items_per_batch = 2
     epoch = 10
