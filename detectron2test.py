@@ -11,47 +11,25 @@ from detectron2.data import MetadataCatalog
 import torchvision
 
 
-def detect_objects():
-    # 设置配置
-    cfg = get_cfg()
-    cfg.merge_from_file(model_zoo.get_config_file(
-        "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
-    ))
-    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5  # 置信度阈值
-    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
-        "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
-    )
-    cfg.MODEL.DEVICE = "cuda"
-    # 创建预测器
-    predictor = DefaultPredictor(cfg)
+# 设置配置
+cfg = get_cfg()
+cfg.merge_from_file(model_zoo.get_config_file(
+    "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
+))
+cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5  # 置信度阈值
+cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
+    "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
+)
+cfg.MODEL.DEVICE = "cpu"
 
-    # 读取图片
-    image_path = "./data/coco2017/test2017/000000000001.jpg"
-    image = cv2.imread(image_path)
+predictor = DefaultPredictor(cfg)
+image_path = "../dataset/coco/test2017/000000000057.jpg"
+image = cv2.imread(image_path)
 
-    # 推理
-    outputs = predictor(image)
+outputs = predictor(image)
 
-    # 可视化
-    v = Visualizer(image[:, :, ::-1], MetadataCatalog.get(cfg.DATASETS.TRAIN[0]))
-    out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
-
-    # 显示结果
-    cv2.imshow("Result", out.get_image()[:, :, ::-1])
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
-def show_version():
-    print(torch.cuda.is_available())
-    print(torch.cuda.device_count())
-    print(torch.cuda.get_device_name(0))
-    print(detectron2.__version__)
-    print(detectron2._C)
-    print(torchvision.__version__)
-
-
-if __name__ == "__main__":
-    show_version()
-    detect_objects()
-
-
+v = Visualizer(image[:, :, ::-1], MetadataCatalog.get(cfg.DATASETS.TRAIN[0]))
+out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
+cv2.imshow("Result", out.get_image()[:, :, ::-1])
+cv2.waitKey(0)
+cv2.destroyAllWindows()
