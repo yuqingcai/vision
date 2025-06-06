@@ -9,6 +9,7 @@ from detectron2 import model_zoo
 from detectron2.utils.visualizer import Visualizer
 from detectron2.data import MetadataCatalog
 import torchvision
+import matplotlib.pyplot as plt
 
 
 def detect_objects():
@@ -37,9 +38,21 @@ def detect_objects():
     out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
 
     # 显示结果
-    cv2.imshow("Result", out.get_image()[:, :, ::-1])
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    # 这里不用cv2.imshow，在 windows 的 WSL 环境下会有问题。一般 WSL 上
+    # 的 opencv 使用的是opencv-python-headless，不能显示图像,如果需要在
+    # 本地显示图像，可以使用 matplotlib 或者直接保存图像。macOS 和 Linux
+    # 上可以使用 cv2.imshow 显示图像。
+    # cv2.imshow("Result", out.get_image()[:, :, ::-1])
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+
+    cv2.imwrite("result.jpg", out.get_image()[:, :, ::-1])
+    print("Result saved to result.jpg")
+    plt.imshow(out.get_image())
+    plt.axis('off')
+    plt.savefig("result.jpg")  # 可选：保存
+    plt.show()
+
 
 def show_version():
     print(torch.cuda.is_available())
