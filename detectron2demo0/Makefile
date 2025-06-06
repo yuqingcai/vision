@@ -19,9 +19,9 @@ LIBRARY_PATH = -L/usr/local/lib/ -L./libtorch/lib -L./libtorchvision/lib -L/opt/
 LIBS = -lz -ltorch -ltorch_cpu -ltorchvision -lc10 -lopencv_core \
 		-lopencv_imgproc -lopencv_highgui -lopencv_imgcodecs
 
-C_FLAGS = $(INCLUDE_PATH) -Os
-CPP_FLAGS = $(INCLUDE_PATH) -Os
-CXX_FLAGS = $(INCLUDE_PATH) -std=c++20 -Wall -Wextra -Os
+C_FLAGS = $(INCLUDE_PATH) -Os -w
+CPP_FLAGS = $(INCLUDE_PATH) -Os -w
+CXX_FLAGS = $(INCLUDE_PATH) -std=c++20 -Wall -Wextra -Os -w
 
 %.o: %.c
 	$(CC) $(C_FLAGS) -c -g $< -o $@
@@ -36,7 +36,9 @@ CXX_FLAGS = $(INCLUDE_PATH) -std=c++20 -Wall -Wextra -Os
 %.d: %.c
 	$(CC) $(C_FLAGS) -MM $< -MT $*.o > $@
 
-targets: detectron2demo0
+.PHONY: all clean targets
+
+all: detectron2demo0
 
 detectron2demo0: main.o
 	$(CXX) $^ -o $@ $(LIBRARY_PATH) $(LIBS) \

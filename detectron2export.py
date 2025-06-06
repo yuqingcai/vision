@@ -13,7 +13,7 @@ from detectron2.modeling import GeneralizedRCNN, build_model
 from detectron2.structures import Boxes
 from detectron2.projects.point_rend import add_pointrend_config
 
-def export_scripting(torch_model):
+def export_scripting(torch_model, name):
     fields = {
         "proposal_boxes": Boxes,
         "objectness_logits": Tensor,
@@ -39,11 +39,11 @@ def export_scripting(torch_model):
 
     adapter = ScriptableAdapter(torch_model)
     ts_model = scripting_with_instances(adapter, fields)
-    torch.jit.save(ts_model, 'mask_rcnn_R_50_FPN_3x_scripting.pt')
+    torch.jit.save(ts_model, f'../model/{name}')
 
 
 # deprecated
-def export_tracing(torch_model):
+def export_tracing(torch_model, name):
     image = torch.rand(3, 800, 800)
     inputs = [{"image": image}]
 
@@ -60,7 +60,7 @@ def export_tracing(torch_model):
     traceable_model = TracingAdapter(torch_model, inputs, inference)
 
     ts_model = torch.jit.trace(traceable_model, (image,))
-    torch.jit.save(ts_model, 'mask_rcnn_R_50_FPN_3x_tracing.pt')
+    torch.jit.save(ts_model, f'../model/{name}')
 
 
 def mask_rcnn_mdoel():
@@ -81,30 +81,30 @@ def mask_rcnn_mdoel():
 
     return model
 
+# not complete yet
+# def pointrend_rcnn_model():
+#     cfg = get_cfg()
+#     add_pointrend_config(cfg)
+#     cfg.merge_from_file("/Volumes/VolumeEXT/Project/NNDL/detectron2/projects/PointRend/configs/InstanceSegmentation/pointrend_rcnn_R_101_FPN_3x_coco.yaml")
+#     cfg.MODEL.WEIGHTS = "detectron2://PointRend/InstanceSegmentation/pointrend_rcnn_R_50_FPN_3x_coco/164955410/model_final_3c3198.pkl"
+#     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
+#     cfg.MODEL.DEVICE = "cpu"
+#     # cfg.MODEL.ROI_MASK_HEAD.FC_DIM = 1024
+#     cfg.freeze()
 
-def pointrend_rcnn_model():
-    cfg = get_cfg()
-    add_pointrend_config(cfg)
-    cfg.merge_from_file("/Volumes/VolumeEXT/Project/NNDL/detectron2/projects/PointRend/configs/InstanceSegmentation/pointrend_rcnn_R_101_FPN_3x_coco.yaml")
-    cfg.MODEL.WEIGHTS = "detectron2://PointRend/InstanceSegmentation/pointrend_rcnn_R_50_FPN_3x_coco/164955410/model_final_3c3198.pkl"
-    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
-    cfg.MODEL.DEVICE = "cpu"
-    # cfg.MODEL.ROI_MASK_HEAD.FC_DIM = 1024
-    cfg.freeze()
-
-    # 模型构建
-    model = build_model(cfg)
-    DetectionCheckpointer(model).resume_or_load(cfg.MODEL.WEIGHTS)
-    model.eval()
+#     # 模型构建
+#     model = build_model(cfg)
+#     DetectionCheckpointer(model).resume_or_load(cfg.MODEL.WEIGHTS)
+#     model.eval()
 
 
 def main() -> None:
     torch._C._jit_set_bailout_depth(1)
 
-    # model = mask_rcnn_mdoel()
-    model = pointrend_rcnn_model()
-    export_scripting(model)
+    model = mask_rcnn_mdoel()
+    export_scripting(model, 'mask_rcnn_R_50_FPN_3x_scripting.pt')
 
+    # model = pointrend_rcnn_model()
     # deprecated
     # export_tracing(torch_model)
 

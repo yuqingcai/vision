@@ -156,25 +156,23 @@ int main(int argc, char *argv[])
 {
     char* filePath = argv[1];
 
-    const char* modelTracingPath = "../mask_rcnn_R_50_FPN_3x_tracing.pt";
-    if (!std::filesystem::exists(modelTracingPath)) {
-        printf("load model error: %s\n", modelTracingPath);
-        return -1;
-    }
-
-    const char* modelScriptingPath = "../mask_rcnn_R_50_FPN_3x_scripting.pt";
-    if (!std::filesystem::exists(modelTracingPath)) {
-        printf("load model error: %s\n", modelTracingPath);
-        return -1;
-    }
-
     vision::detail::_register_ops();
     float scale = 1.0;
 
+    // const char* modelTracingPath = "../mask_rcnn_R_50_FPN_3x_tracing.pt";
+    // if (!std::filesystem::exists(modelTracingPath)) {
+    //     printf("load model error: %s\n", modelTracingPath);
+    //     return -1;
+    // }
     // torch::jit::script::Module moduleTracing = torch::jit::load(modelTracingPath);
     // cv::Mat img0 = eval_tracing_model(moduleTracing, filePath);
     // cv::imshow("tracing module eval", img0);
 
+    const char* modelScriptingPath = "../../model/mask_rcnn_R_50_FPN_3x_scripting.pt";
+    if (!std::filesystem::exists(modelScriptingPath)) {
+        printf("load model error: %s\n", modelScriptingPath);
+        return -1;
+    }
     torch::jit::script::Module moduleScripting = torch::jit::load(modelScriptingPath);
     cv::Mat img1 = eval_scripting_model(moduleScripting, filePath, scale);
     cv::imshow("scripting modeule eval", img1);
