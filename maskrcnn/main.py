@@ -6,7 +6,9 @@ import json
 from collections import defaultdict
 import time
 import matplotlib.pyplot as plt
+import os
 
+# tf.config.set_visible_devices([], 'GPU')
 
 def build_resnet101(input_shape=(None, None, 3), weights="imagenet"):
     inputs = keras.Input(shape=input_shape, batch_size=None)
@@ -21,6 +23,27 @@ def build_resnet101(input_shape=(None, None, 3), weights="imagenet"):
         "conv2_block3_out",
         "conv3_block4_out", 
         "conv4_block23_out",
+        "conv5_block3_out",
+    ]
+    # get C2, C3, C4, C5 layer outputs
+    outputs = [base_model.get_layer(name).output for name in layer_names]
+    model = keras.Model(inputs=base_model.input, outputs=outputs)
+    return model
+
+
+def build_resnet50(input_shape=(None, None, 3), weights="imagenet"):
+    inputs = keras.Input(shape=input_shape, batch_size=None)
+    base_model = keras.applications.ResNet50(
+        include_top=False,
+        weights=weights,
+        input_tensor=inputs,
+        pooling=None
+    )
+
+    layer_names = [
+        "conv2_block3_out",
+        "conv3_block4_out", 
+        "conv4_block6_out",
         "conv5_block3_out",
     ]
     # get C2, C3, C4, C5 layer outputs
@@ -94,7 +117,8 @@ class RPN(layers.Layer):
 
 def build_model(input_shape=(None, None, 3), anchors_per_location=3, 
                     feature_size=256, roi_pool_size=7):
-    backbone = build_resnet101(input_shape)
+    # backbone = build_resnet101(input_shape)
+    backbone = build_resnet50(input_shape)
     c2, c3, c4, c5 = backbone.output
     fpn_outputs = build_fpn(c2, c3, c4, c5)
     rpn = RPN(anchors_per_location=anchors_per_location, 
@@ -108,21 +132,17 @@ def build_model(input_shape=(None, None, 3), anchors_per_location=3,
     )
 
 
-def resize_image(img, min_size=800, max_size=1333):
+def resize_and_pad_image(img, min_size=800, max_size=1333):
     h, w = img.shape[:2]
-    scale = min(min_size / h, max_size / w)
+    scale = min(min_size / min(h, w), max_size / max(h, w))
     new_h = int(round(h * scale))
     new_w = int(round(w * scale))
     img_resized = tf.image.resize(img, (new_h, new_w), method='bilinear')
 
-    # 如果缩放后尺寸大于目标，直接中心裁剪
-    if new_h > min_size or new_w > max_size:
-        img_cropped = tf.image.resize_with_crop_or_pad(img_resized, min_size, max_size)
-        return img_cropped, scale
+    # compute padding to make (min_size, max_size)
+    pad_h = max(0, min_size - new_h)
+    pad_w = max(0, max_size - new_w)
 
-    # 否则padding
-    pad_h = min_size - new_h
-    pad_w = max_size - new_w
     pad_top = pad_h // 2
     pad_bottom = pad_h - pad_top
     pad_left = pad_w // 2
@@ -160,28 +180,30 @@ if __name__ == "__main__":
     model = build_model(input_shape=(None, None, 3))
     model.summary()
 
-    img_name = 'input1.jpg'
-    img_path = f'../../dataset/coco/train2017/{img_name}'
+    img_name = '000000000049.jpg'
+    img_path = f'../../dataset/coco2017/train2017/{img_name}'
     img = tf.io.read_file(img_path)
     img = tf.image.decode_jpeg(img, channels=3)
     img = tf.image.convert_image_dtype(img, tf.float32)
-    img_resized, scale = resize_image(img, min_size=800, max_size=1333)
-    plt.imshow(img_resized.numpy())
-    plt.title("img_resized")
-    plt.show()
-
+    img_resized, scale = resize_and_pad_image(img, min_size=800, max_size=1333)
     img_input = expand_batch_axis(img_resized)
 
     start_time = time.time()
-    outputs = model(img_input)
+    for i in range(100):
+        print(f'eval:{i}')
+        outputs = model(img_input)
     end_time = time.time()
     print(f"elapsed time: {end_time - start_time:.4f} s")
     
     # 输出各层特征的 shape
     for i, output in enumerate(outputs):
         print(output.shape)
-
-    model.export('model_export')
+    
+    # model.export('model_export')
     # img_id = filename_to_id[img_name]
     # anns = id_to_anns[img_id]
     # print(anns)
+
+    plt.imshow(img_resized.numpy())
+    plt.title("img_resized")
+    plt.show()

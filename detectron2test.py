@@ -27,7 +27,7 @@ def detect_objects():
     predictor = DefaultPredictor(cfg)
 
     # 读取图片
-    image_path = "./data/coco2017/test2017/000000000001.jpg"
+    image_path = "../dataset/coco2017/test2017/000000000001.jpg"
     image = cv2.imread(image_path)
 
     # 推理
@@ -59,7 +59,7 @@ def show_version():
     print(torch.cuda.device_count())
     print(torch.cuda.get_device_name(0))
     print(detectron2.__version__)
-    print(detectron2._C)
+    # print(detectron2._C)
     print(torchvision.__version__)
 
 
