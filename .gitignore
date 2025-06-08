@@ -4,6 +4,7 @@ __pycache__/
 *.pth
 *.pt
 *.png
+*.jpg
 detectron2demo0/lib*
 detectron2demo0/*.o
 detectron2demo0/detectron2demo0

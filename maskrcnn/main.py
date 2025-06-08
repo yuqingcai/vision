@@ -10,15 +10,18 @@ import os
 
 # tf.config.set_visible_devices([], 'GPU')
 
-def build_resnet101(input_shape=(None, None, 3), weights="imagenet"):
-    inputs = keras.Input(shape=input_shape, batch_size=None)
+def build_resnet101(
+        input_shape=(None, None, 3), 
+        barch_size=1, 
+        weights="imagenet"):
+    
+    inputs = keras.Input(shape=input_shape, batch_size=barch_size)
     base_model = keras.applications.ResNet101(
         include_top=False,
         weights=weights,
         input_tensor=inputs,
         pooling=None
     )
-
     layer_names = [
         "conv2_block3_out",
         "conv3_block4_out", 
@@ -27,19 +30,25 @@ def build_resnet101(input_shape=(None, None, 3), weights="imagenet"):
     ]
     # get C2, C3, C4, C5 layer outputs
     outputs = [base_model.get_layer(name).output for name in layer_names]
-    model = keras.Model(inputs=base_model.input, outputs=outputs)
+    model = Model(
+        inputs=base_model.input, 
+        outputs=outputs,
+        name='resnet101')
     return model
 
 
-def build_resnet50(input_shape=(None, None, 3), weights="imagenet"):
-    inputs = keras.Input(shape=input_shape, batch_size=None)
+def build_resnet50(
+        input_shape=(None, None, 3), 
+        barch_size=1, 
+        weights="imagenet"):
+    
+    inputs = keras.Input(shape=input_shape, batch_size=barch_size)
     base_model = keras.applications.ResNet50(
         include_top=False,
         weights=weights,
         input_tensor=inputs,
         pooling=None
     )
-
     layer_names = [
         "conv2_block3_out",
         "conv3_block4_out", 
@@ -48,7 +57,10 @@ def build_resnet50(input_shape=(None, None, 3), weights="imagenet"):
     ]
     # get C2, C3, C4, C5 layer outputs
     outputs = [base_model.get_layer(name).output for name in layer_names]
-    model = keras.Model(inputs=base_model.input, outputs=outputs)
+    model = Model(
+        inputs=base_model.input, 
+        outputs=outputs,
+        name='resnet50')
     return model
 
 
@@ -87,6 +99,20 @@ def build_fpn(c2, c3, c4, c5, feature_size=256):
     return [p2, p3, p4, p5]
 
 
+def build_resnet50_fpn(
+        input_shape=(None, None, 3), 
+        batch_size=1):
+    
+    backbone = build_resnet50(input_shape, batch_size)
+    c2, c3, c4, c5 = backbone.output
+    fpn_outputs = build_fpn(c2, c3, c4, c5)
+    return Model(
+        inputs=backbone.input,
+        outputs=fpn_outputs,
+        name="resnet50_fpn"
+    )
+
+
 class RPN(layers.Layer):
     def __init__(self, anchors_per_location=3, feature_size=256, **kwargs):
         super().__init__(**kwargs)
@@ -115,16 +141,27 @@ class RPN(layers.Layer):
         return [obj2, obj3, obj4, obj5], [box2, box3, box4, box5]
 
 
-def build_model(input_shape=(None, None, 3), anchors_per_location=3, 
-                    feature_size=256, roi_pool_size=7):
-    # backbone = build_resnet101(input_shape)
-    backbone = build_resnet50(input_shape)
+def build_model_resnet_fpn_rpn(
+        input_shape=(None, None, 3), 
+        batch_size=1, 
+        anchors_per_location=3, 
+        feature_size=256, 
+        roi_pool_size=7,
+        backbone_type='resnet50'):
+    
+    if backbone_type == 'resnet101':
+        backbone = build_resnet101(input_shape, batch_size)
+    elif backbone_type == 'resnet50':
+        backbone = build_resnet50(input_shape, batch_size)
+    else:
+        raise ValueError("backbone_type must be 'resnet50' or 'resnet101'")
+    
     c2, c3, c4, c5 = backbone.output
     fpn_outputs = build_fpn(c2, c3, c4, c5)
+
     rpn = RPN(anchors_per_location=anchors_per_location, 
               feature_size=feature_size)
     rpn_objectness, rpn_bbox = rpn(fpn_outputs)
-
     return Model(
         inputs=backbone.input,
         outputs=rpn_objectness + rpn_bbox,
@@ -173,37 +210,67 @@ def expand_batch_axis(img):
     return tf.expand_dims(img, axis=0)
 
 
+def image_tensor(file_name):
+    path = f'../../dataset/coco2017/train2017/{file_name}'
+    img = tf.io.read_file(path)
+    img = tf.image.decode_jpeg(img, channels=3)
+    img = tf.image.convert_image_dtype(img, tf.float32)
+    img_resized, scale = resize_and_pad_image(img, min_size=800, max_size=1333)
+    img_expand = expand_batch_axis(img_resized)
+    return img_expand, scale
+
+
 if __name__ == "__main__":
     # filename_to_id, id_to_anns = build_coco_ann_index(
     #     '../../dataset/coco/annotations/instances_train2017.json')
 
-    model = build_model(input_shape=(None, None, 3))
-    model.summary()
+    img_0, scale_0 = image_tensor('000000000049.jpg')
 
-    img_name = '000000000049.jpg'
-    img_path = f'../../dataset/coco2017/train2017/{img_name}'
-    img = tf.io.read_file(img_path)
-    img = tf.image.decode_jpeg(img, channels=3)
-    img = tf.image.convert_image_dtype(img, tf.float32)
-    img_resized, scale = resize_and_pad_image(img, min_size=800, max_size=1333)
-    img_input = expand_batch_axis(img_resized)
+    resnet50 = build_resnet50()
+    resnet50.summary()
+    resnet50_fpn = build_resnet50_fpn()
+    resnet50_fpn.summary()
 
-    start_time = time.time()
-    for i in range(100):
-        print(f'eval:{i}')
-        outputs = model(img_input)
-    end_time = time.time()
-    print(f"elapsed time: {end_time - start_time:.4f} s")
-    
-    # 输出各层特征的 shape
+    print('output from resnet50:')
+    outputs = resnet50(img_0)
     for i, output in enumerate(outputs):
         print(output.shape)
+
+    print('output from resnet50_fpn:')
+    outputs = resnet50_fpn(img_0)
+    for i, output in enumerate(outputs):
+        print(output.shape)
+
+    # for i, feature in enumerate(outputs):
+    #     # 取第一个batch和第0通道
+    #     for j in range(5):
+    #         fmap = feature[0, :, :, j].numpy()
+    #         plt.figure()
+    #         plt.imshow(fmap, cmap='viridis')
+    #         plt.title(f'FPN P{i+2} Feature Map (channel {j})')
+    #         plt.colorbar()
+    # plt.show()
+
+    # model = build_model_resnet_fpn_rpn()
+    # model.summary()
+    # outputs = model(img_0)
+
+    # 输出各层特征的 shape
+    # for i, output in enumerate(outputs):
+    #     print(output.shape)
+
+    # start_time = time.time()
+    # for i in range(100):
+    #     print(f'eval:{i}')
+    #     outputs = model(img)
+    # end_time = time.time()
+    # print(f"elapsed time: {end_time - start_time:.4f} s")
     
     # model.export('model_export')
     # img_id = filename_to_id[img_name]
     # anns = id_to_anns[img_id]
     # print(anns)
 
-    plt.imshow(img_resized.numpy())
-    plt.title("img_resized")
-    plt.show()
+    # plt.imshow(img_resized.numpy())
+    # plt.title("img_resized")
+    # plt.show()
