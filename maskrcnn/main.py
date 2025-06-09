@@ -217,7 +217,8 @@ class RPNHead(layers.Layer):
             bbox_deltas = self.bbox_deltas(x)
             # reshape
             logits = tf.reshape(logits, [tf.shape(logits)[0], -1, 1])   # (batch, HW*A, 1)
-            bbox_deltas = tf.reshape(bbox_deltas, [tf.shape(bbox_deltas)[0], -1, 4])  # (batch, HW*A, 4)
+            bbox_deltas = tf.reshape(bbox_deltas, 
+                                     [tf.shape(bbox_deltas)[0], -1, 4]) # (batch, HW*A, 4)
             logits_all.append(logits)
             bbox_deltas_all.append(bbox_deltas)
 
@@ -424,8 +425,11 @@ if __name__ == "__main__":
     # plt.show()
 
     img_np = img_0[0].numpy()  # 去掉 batch 维，转为 numpy
+    plt.imshow(img_np)
+
     plt.figure(figsize=(12, 12))
     plt.imshow(img_np)
+
     ax = plt.gca()
 
     for box in output.numpy():
