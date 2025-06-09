@@ -216,14 +216,16 @@ class RPNHead(layers.Layer):
             logits = self.cls_logits(x)
             bbox_deltas = self.bbox_deltas(x)
             # reshape
-            logits = tf.reshape(logits, [tf.shape(logits)[0], -1, 1])   # (batch, HW*A, 1)
-            bbox_deltas = tf.reshape(bbox_deltas, 
-                                     [tf.shape(bbox_deltas)[0], -1, 4]) # (batch, HW*A, 4)
+            logits = tf.reshape(
+                logits, [tf.shape(logits)[0], -1, 1])   # (batch, HW*A, 1)
+            bbox_deltas = tf.reshape(
+                bbox_deltas, 
+                [tf.shape(bbox_deltas)[0], -1, 4])      # (batch, HW*A, 4)
             logits_all.append(logits)
             bbox_deltas_all.append(bbox_deltas)
 
-        logits_all = tf.concat(logits_all, axis=1)         # (batch, N, 1)
-        bbox_deltas_all = tf.concat(bbox_deltas_all, axis=1)  # (batch, N, 4)
+        logits_all = tf.concat(logits_all, axis=1)              # (batch, N, 1)
+        bbox_deltas_all = tf.concat(bbox_deltas_all, axis=1)    # (batch, N, 4)
         
         return logits_all, bbox_deltas_all
 
@@ -246,7 +248,7 @@ class ProposalGenerator(layers.Layer):
         ha = anchors[:, 3] - anchors[:, 1]
         xa = anchors[:, 0] + 0.5 * wa
         ya = anchors[:, 1] + 0.5 * ha
-
+        
         dx = bbox_deltas[:, 0]
         dy = bbox_deltas[:, 1]
         dw = bbox_deltas[:, 2]
