@@ -1,7 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import layers, Model
 
-
 """
 生成 anchors
 anchors（锚框）：是按照特定规则（位置、尺度、比例）在特征图上密集生成的一组“参考框”，
@@ -17,6 +16,10 @@ class AnchorGenerator(layers.Layer):
         super().__init__(**kwargs)
         self.ratios = tf.constant(ratios, dtype=tf.float32)
         self.scales = tf.constant(scales, dtype=tf.float32)
+
+    def build(self, input_shape):
+        super().build(input_shape)
+        self.built = True
 
     def call(self, strides, base_sizes, feature_maps):
         anchors_all = []
@@ -82,27 +85,41 @@ class RPNHead(layers.Layer):
         # 边框回归 (batch, H, W, num_anchors*4)
         self.bbox_deltas = layers.Conv2D(num_anchors * 4, 1)
 
+    
+    def build(self, input_shape):
+        super().build(input_shape)
+        self.built = True
+
+    # 输入特征图列表，输出 logits 和 bbox_deltas
+    # shape
+    # logits: (batch, HW*A, 1)
+    # bbox_deltas: (batch, HW*A, 4)
+    # 
     def call(self, feature_maps):
         logits_all = []
         bbox_deltas_all = []
 
         for feature_map in feature_maps:
-
             x = self.conv(feature_map)
-
             logits = self.cls_logits(x)
             bbox_deltas = self.bbox_deltas(x)
 
-            # reshape
-            logits = tf.reshape(logits, [tf.shape(logits)[0], -1, 1])   # (batch, HW*A, 1)
-            bbox_deltas = tf.reshape(bbox_deltas, 
-                                     [tf.shape(bbox_deltas)[0], -1, 4])  # (batch, HW*A, 4)
+            logits = tf.reshape(logits, [tf.shape(logits)[0], -1, 1])
+            bbox_deltas = tf.reshape(
+                bbox_deltas, [tf.shape(bbox_deltas)[0], -1, 4])
+            
             logits_all.append(logits)
             bbox_deltas_all.append(bbox_deltas)
 
-        logits_all = tf.concat(logits_all, axis=1)         # (batch, N, 1)
-        bbox_deltas_all = tf.concat(bbox_deltas_all, axis=1)  # (batch, N, 4)
+        logits_all = tf.concat(logits_all, axis=1)
+        bbox_deltas_all = tf.concat(bbox_deltas_all, axis=1)
         
+        # 去掉 batch 维度，现在这个模型只能处理单张图片。
+        # shape
+        # logits_all: (batch, N, 1)
+        # bbox_deltas_all: (batch, N, 4)
+        logits_all = tf.squeeze(logits_all, axis=0)
+        bbox_deltas_all = tf.squeeze(bbox_deltas_all, axis=0)
         return logits_all, bbox_deltas_all
 
 
@@ -115,6 +132,10 @@ class ProposalGenerator(layers.Layer):
         self.nms_thresh = nms_thresh
         self.min_size = min_size
 
+    def build(self, input_shape):
+        super().build(input_shape)
+        self.built = True
+        
     def call(self, image, anchors, bbox_deltas, logits):
 
         # 1. 解码 proposals
@@ -165,7 +186,8 @@ class ProposalGenerator(layers.Layer):
 
         # 5. NMS
         keep = tf.image.non_max_suppression(
-            proposals, scores,
+            proposals, 
+            scores,
             max_output_size=self.post_nms_topk,
             iou_threshold=self.nms_thresh
         )

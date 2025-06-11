@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras import layers, Model
 
-class RoIAlign(layers.Layer):
+class ROIAlign(layers.Layer):
     def __init__(self, output_size=7, sampling_ratio=2, **kwargs):
         """
         output_size: 输出特征的空间尺寸（如7，输出为7x7）
@@ -11,6 +11,10 @@ class RoIAlign(layers.Layer):
         self.output_size = output_size
         self.sampling_ratio = sampling_ratio
     
+    def build(self, input_shape):
+        super().build(input_shape)
+        self.built = True
+
     def call(self, feature_maps, rois, strides=[4, 8, 16, 32]):
         """
         feature_maps: [P2, P3, P4, P5], 每层shape为(batch, H, W, C)

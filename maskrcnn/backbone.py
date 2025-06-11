@@ -1,4 +1,3 @@
-import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, Model
 
@@ -27,6 +26,7 @@ def build_resnet101(
         inputs=base_model.input, 
         outputs=outputs,
         name='resnet101')
+    
     return model
 
 
@@ -54,4 +54,5 @@ def build_resnet50(
         inputs=base_model.input, 
         outputs=outputs,
         name='resnet50')
+    
     return model
