@@ -4,10 +4,9 @@ from tensorflow.keras import layers, Model
 from fpn import FPNGenerator
 from backbone import build_resnet50, build_resnet101
 from rpn import AnchorGenerator, RPNHead, ProposalGenerator
-from roi_align import ROIAlign
 from loss import rpn_class_loss, rpn_bbox_loss, roi_class_loss, \
     roi_bbox_loss, roi_mask_loss
-from roi_heads import ROIClassifierHead, ROIBBoxHead, ROIMaskHead
+from roi import ROIAlign, ROIClassifierHead, ROIBBoxHead, ROIMaskHead
 from utils import sample_and_assign_targets
 
 class MaskRCNN(Model):
@@ -117,6 +116,7 @@ class MaskRCNN(Model):
         self.optimizer = optimizer
 
     def train_step(self, inputs):
+        
         image, \
         (rpn_labels, \
          rpn_targets, \

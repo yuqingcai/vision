@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras import layers, Model
+from tensorflow.keras import layers
 
 class ROIAlign(layers.Layer):
     def __init__(self, output_size=7, sampling_ratio=2, **kwargs):
