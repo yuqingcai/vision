@@ -27,7 +27,7 @@ class ROIAlign(layers.Layer):
         roi_w = x2 - x1
         roi_level = tf.math.log(tf.sqrt(roi_h * roi_w) / 224.0) / tf.math.log(2.0)
         roi_level = tf.clip_by_value(tf.cast(tf.round(4 + roi_level), tf.int32), 2, 5)
-
+        
         pooled_features = []
         for i, stride in enumerate(strides):
             level = i + 2

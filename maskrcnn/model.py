@@ -163,5 +163,5 @@ class MaskRCNN(Model):
         grads = tape.gradient(total_loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
         self.loss_tracker.update_state(total_loss)
-
+        
         return {"loss": self.loss_tracker.result()}

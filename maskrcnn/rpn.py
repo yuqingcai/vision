@@ -180,7 +180,10 @@ class ProposalGenerator(layers.Layer):
         scores = tf.gather(tf.sigmoid(logits[:, 0]), valid[:, 0])
 
         # 4. 取 top-k
-        topk = tf.math.top_k(scores, k=tf.minimum(self.pre_nms_topk, tf.shape(scores)[0]))
+        topk = tf.math.top_k(
+            scores, 
+            k=tf.minimum(self.pre_nms_topk, tf.shape(scores)[0])
+            )
         proposals = tf.gather(proposals, topk.indices)
         scores = tf.gather(scores, topk.indices)
 
