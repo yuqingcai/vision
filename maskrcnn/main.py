@@ -9,109 +9,25 @@ import matplotlib.patches as patches
 import os
 import numpy as np
 from model import MaskRCNN
+from dataset import create_dataset
+
 
 # tf.config.set_visible_devices([], 'GPU')
-   
-def resize_image(img, min_size=800, max_size=1333):
-    h, w = img.shape[:2]
-    scale = min(min_size / min(h, w), max_size / max(h, w))
-    new_h = int(round(h * scale))
-    new_w = int(round(w * scale))
-    img_resized = tf.image.resize(img, (new_h, new_w), method='bilinear')
-    return img_resized, scale
 
-
-def padding_image(img, target_height=1400, target_width=1400):
-    h, w = img.shape[:2]
-    pad_h = target_height - h
-    pad_w = target_width - w
-    if pad_h < 0 or pad_w < 0:
-        print(f'w: {w}, h: {h}')
-        raise ValueError("Image is larger than target size.")
-    img_padded = tf.image.pad_to_bounding_box(
-        img, 0, 0, target_height, target_width)
-    return img_padded
-
-
-def expand_batch_axis(img):
-    return tf.expand_dims(img, axis=0)
-
-
-def image_tensor(file_name):
-    path = f'../../dataset/coco2017/train2017/{file_name}'
-    img = tf.io.read_file(path)
-    img = tf.image.decode_jpeg(img, channels=3)
-    img = tf.image.convert_image_dtype(img, tf.float32)
-    img_resized, scale = resize_image(img, min_size=800, max_size=1333)
-    return img_resized, scale
+coco_root = "../../dataset/coco2017/"
+train_img_dir = os.path.join(coco_root, "train2017")
+ann_file = os.path.join(coco_root, "annotations/instances_train2017.json")
 
 
 if __name__ == "__main__":
+    ds = create_dataset(
+        ann_file=ann_file,
+        img_dir=train_img_dir,
+        batch_size=4
+    )
 
-    ann_path = '../../dataset/coco2017/annotations/instances_train2017.json'
-    coco = COCO(ann_path)
-    image_ids = coco.getImgIds()
-
-    batch = []
-    max_width = 0
-    max_height = 0
-
-    n = len(image_ids)
-    indices = np.random.choice(n, size=10, replace=False)
-
-    for i in indices:
-        img_id = image_ids[i]
-        
-        img_info = coco.loadImgs(img_id)[0]
-        file_name = img_info['file_name']
-        origin_height = img_info['height']
-        origin_width = img_info['width']
-        img, scale = image_tensor(file_name)
-        target_height = int(round(origin_height * scale))
-        target_width = int(round(origin_width * scale))
-
-        batch.append({
-            'image': img, 
-            'scale': scale, 
-            'image_id': img_id, 
-            'file_name': file_name, 
-            'origin_height': origin_height, 
-            'origin_width': origin_width,
-            'target_height': target_height,
-            'target_width': target_width
-            })
-        
-        if target_height > max_height:
-            max_height = target_height
-
-        if target_width > max_width:
-            max_width = target_width
-
-    images = []
-    for item in batch:
-        img = item['image']
-        img = padding_image(
-            img, 
-            target_height=max_height, 
-            target_width=max_width
-            )
-        img = expand_batch_axis(img)
-        item['image'] = img
-        images.append(img)
-    
-    images = tf.concat(images, axis=0)
-    print(f'images shape: {images.shape}')
-
-    for item in batch:
-        img = item['image']
-        img_np = img[0].numpy()
-        plt.figure()
-        plt.title(f"Image ID: {item['image_id']}")
-        plt.imshow(img_np)
-
-    plt.show()
-
-
+    for data in ds:
+        print(data)
 
     # # 选择一张图像 ID（比如第一张）
     # img_id = image_ids[1]
