@@ -5,7 +5,7 @@ import numpy as np
 import functools
 
 
-def load_image_infos(coco, img_ids, img_dir):
+def load_image_info(coco, img_ids, img_dir):
     data = []
     for img_id in img_ids:
         img_info = coco.loadImgs(img_id)[0]
@@ -19,7 +19,7 @@ def load_image_infos(coco, img_ids, img_dir):
                 x, y, w, h = ann['bbox']
                 bboxes.append([x, y, x+w, y+h])
             else:
-                print(f'Warning: No bbox for annotation {ann["id"]} in image {img_id}')
+                tf.print(f'Warning: No bbox for annotation {ann["id"]} in image {img_id}')
                 bboxes.append([])
                 # classes.append(ann['category_id'])
 
@@ -55,13 +55,8 @@ def preprocess(batch):
 def create_dataset(ann_file, img_dir, batch_size=4):
     coco = COCO(ann_file)
     img_ids = coco.getImgIds()
-    entries = load_image_infos(coco, img_ids, img_dir)
+    entries = load_image_info(coco, img_ids, img_dir)
 
-    # shapes
-    # images: [batch, H, W, 3]
-    # bboxes: [batch, N, 4]
-    # masks: [batch, N, H, W]
-    # labels: [batch, N]
     ds = tf.data.Dataset.from_generator(
         functools.partial(generator, entries), 
         output_signature={   

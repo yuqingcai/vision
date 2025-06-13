@@ -26,8 +26,8 @@ if __name__ == "__main__":
         batch_size=4
     )
 
-    for data in ds:
-        print(data)
+    # for data in ds:
+    #     print(data)
 
     # # 选择一张图像 ID（比如第一张）
     # img_id = image_ids[1]
