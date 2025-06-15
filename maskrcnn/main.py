@@ -25,9 +25,27 @@ if __name__ == "__main__":
         img_dir=train_img_dir,
         batch_size=4
     )
+    
+    for i, data in enumerate(ds):
+        print(f'data {i}:')
+        print(f'file_path:')
+        for image_path in data['file_path']:
+            print(f'{image_path.numpy().decode()}')
 
-    # for data in ds:
-    #     print(data)
+        print(f'category_ids:')
+        for category_id in data['category_ids']:
+            print(f'{category_id.numpy().tolist()}')
+
+        print(f'bboxes:')
+        for bbox in data['bboxes']:
+            print(f'{bbox.numpy().tolist()}')
+
+
+        print(f'segmentations:')
+        for segmentation in data['segmentations']:
+            print(f'{segmentation.numpy().tolist()}')
+        
+        print(f'')
 
     # # 选择一张图像 ID（比如第一张）
     # img_id = image_ids[1]
