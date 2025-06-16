@@ -20,32 +20,45 @@ ann_file = os.path.join(coco_root, "annotations/instances_train2017.json")
 
 
 if __name__ == "__main__":
-    ds = create_dataset(
+    ds_train = create_dataset(
         ann_file=ann_file,
         img_dir=train_img_dir,
         batch_size=4
     )
     
-    for i, data in enumerate(ds):
-        print(f'data {i}:')
-        print(f'file_path:')
-        for image_path in data['file_path']:
-            print(f'{image_path.numpy().decode()}')
+    print(f'walk through batches in dataset...')
+    time_0 = time.time()
+    k = 0
+    for i, data in enumerate(ds_train):
+        # if i == 0:
+        #     for img in data["images"]:
+        #         plt.figure()
+        #         plt.imshow(img.numpy())
+        #         plt.axis('on')
+        #     plt.show()
+            # print(f'first batch image: {data["images"][0].numpy()}')
 
-        print(f'category_ids:')
-        for category_id in data['category_ids']:
-            print(f'{category_id.numpy().tolist()}')
+        print(f'batch {i}:')
+        k += 1
+    print(f'batches: {k}, duration: {time.time() - time_0:.2f} s')
+        # print(f'file_path:')
+        # for image_path in data['file_path']:
+        #     print(f'{image_path.numpy().decode()}')
 
-        print(f'bboxes:')
-        for bbox in data['bboxes']:
-            print(f'{bbox.numpy().tolist()}')
+        # print(f'category_ids:')
+        # for category_id in data['category_ids']:
+        #     print(f'{category_id.numpy().tolist()}')
+
+        # print(f'bboxes:')
+        # for bbox in data['bboxes']:
+        #     print(f'{bbox.numpy().tolist()}')
 
 
-        print(f'segmentations:')
-        for segmentation in data['segmentations']:
-            print(f'{segmentation.numpy().tolist()}')
-        
-        print(f'')
+        # print(f'segmentations:')
+        # for segmentation in data['segmentations']:
+        #     print(f'{segmentation.numpy().tolist()}')
+
+        # print(f'')
 
     # # 选择一张图像 ID（比如第一张）
     # img_id = image_ids[1]

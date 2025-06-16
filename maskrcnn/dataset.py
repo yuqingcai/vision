@@ -83,6 +83,7 @@ def load_image_info(coco, img_ids, img_dir):
         
         data.append({
             'file_path': file_path,
+            'size' :  (height, width), 
             'bboxes' : bboxes,
             'category_ids': category_ids,
             'segmentations' : segmentations, 
@@ -94,18 +95,88 @@ def generator(entries):
     for entry in entries:
         yield {
             'file_path': tf.constant(entry['file_path'], dtype=tf.string),
+            'size': tf.constant(entry['size'], dtype=tf.int32),
             'bboxes': tf.ragged.constant(entry['bboxes'], dtype=tf.float32),
             'category_ids': tf.constant(entry['category_ids'], dtype=tf.int32),
             'segmentations': tf.constant(entry['segmentations'], dtype=tf.string),
         }
 
 
+def size_to(size, min_size=800, max_size=1333):
+    h = tf.cast(size[0], tf.float32)
+    w = tf.cast(size[1], tf.float32)
+    scale = tf.minimum(min_size / tf.minimum(h, w),
+                    max_size / tf.maximum(h, w))
+    new_h = tf.cast(tf.round(tf.cast(h, tf.float32) * \
+                             tf.cast(scale, tf.float32)), tf.int32)
+    new_w = tf.cast(tf.round(tf.cast(w, tf.float32) * \
+                             tf.cast(scale, tf.float32)), tf.int32)
+    return tf.stack([new_h, new_w])
+
+
+
+def resize_image(image, min_size=800, max_size=1333):
+    h = tf.shape(image)[0]
+    w = tf.shape(image)[1]
+    
+    new_hw = size_to((h, w), min_size, max_size)
+    new_h = new_hw[0]
+    new_w = new_hw[1]
+    resized = tf.image.resize(image, (new_h, new_w), method='bilinear')
+    return resized
+
+
+def padding_image(image, height=1400, width=1400):
+    h = tf.shape(image)[0]
+    w = tf.shape(image)[1]
+    
+    pad_h = tf.subtract(tf.cast(height, tf.int32), h)
+    pad_w = tf.subtract(tf.cast(width, tf.int32), w)
+
+    tf.debugging.assert_non_negative(
+        [pad_h, pad_w],
+        message="Image is larger than target size. Check h and w."
+    )
+
+    padded = tf.image.pad_to_bounding_box(image, 0, 0, height, width)
+    return padded
+
+
+def max_size_in_batch(sizes):
+    max_height = tf.reduce_max(sizes[:, 0])
+    max_width = tf.reduce_max(sizes[:, 1])
+    return max_height, max_width
+
+
+def load_image(file_path, min_size, max_size, padding_hw):
+    img_raw = tf.io.read_file(file_path)
+    image = tf.image.decode_jpeg(img_raw, channels=3)
+    image = tf.image.convert_image_dtype(image, tf.float32)
+    resized = resize_image(image, min_size, max_size)
+    padded = padding_image(resized, height=padding_hw[0], width=padding_hw[1])
+    return padded
+
+
 def preprocess(batch):
-    # tf.print(batch)
-    # for item in batch:
-    #     img = tf.io.read_file(item['file_path'])
-    #     img = tf.image.decode_jpeg(img, channels=3)
-    #     img = tf.image.convert_image_dtype(img, tf.float32)
+    min_size = 800
+    max_size = 1333
+    
+    resizes = tf.map_fn(
+        lambda size: size_to(size, min_size, max_size), 
+        batch['size'],
+        fn_output_signature=tf.TensorSpec(shape=(2,), 
+                                          dtype=tf.int32))
+    
+    padding_hw = max_size_in_batch(resizes)
+
+    images = tf.map_fn(
+        lambda file_path: load_image(file_path, 
+            min_size, max_size, padding_hw), 
+        batch['file_path'],
+        fn_output_signature=tf.TensorSpec(shape=(None, None, 3), 
+                                          dtype=tf.float32))
+    batch['images'] = images
+    
     return batch
 
 
@@ -137,6 +208,7 @@ def create_dataset(ann_file, img_dir, batch_size=4):
         # 
         output_signature={
             'file_path': tf.TensorSpec(shape=(), dtype=tf.string),
+            'size': tf.TensorSpec(shape=(2,), dtype=tf.int32), 
             'bboxes': tf.RaggedTensorSpec(shape=(None, 4), dtype=tf.float32),
             'category_ids': tf.TensorSpec(shape=(None,), dtype=tf.int32),
             'segmentations': tf.TensorSpec(shape=(None,), dtype=tf.string),
