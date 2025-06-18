@@ -10,7 +10,7 @@ import time
 
 
 def load_image_info(coco, img_ids, img_dir):
-    print('loading image info from COCO dataset...')
+    print('loading image info from annotations...')
     time_0 = time.time()
 
     data = []

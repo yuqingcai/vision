@@ -77,16 +77,16 @@ if __name__ == '__main__':
         batch_size=batch_size
     )
 
+    # print(f"iterate through dataset...")
     # time_0 = time.time()
     # for i, sample in enumerate(ds_train):
     #     print(f"Batch {i}:")
     # time_1 = time.time()
-    # print(f"Time taken to iterate through dataset: {time_1 - time_0:.2f} seconds")
+    # print(f"Done (t={time_1 - time_0:.2f}s)")
     
-    # n = random.randint(0, 1000)
-    # sample = next(itertools.islice(ds_train, n-1, n))
-
-    sample = next(iter(ds_train))
+    n = random.randint(0, 1000)
+    sample = next(itertools.islice(ds_train, n-1, n))
+    # sample = next(iter(ds_train))
     for i in range(batch_size):
         show_image(sample, i)
     plt.show()
