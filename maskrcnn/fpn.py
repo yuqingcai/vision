@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras import layers, Model
+from tensorflow.keras import layers
 
 
 class FPNGenerator(layers.Layer):
@@ -18,9 +18,9 @@ class FPNGenerator(layers.Layer):
         self.smooth_p2 = layers.Conv2D(feature_size, 3, padding="same")
         self.resize = layers.Lambda(lambda x: tf.image.resize(x[0], tf.shape(x[1])[1:3], method='nearest'))
 
-    def build(self, input_shape):
-        super().build(input_shape)
-        self.built = True
+    # def build(self, input_shape):
+    #     super().build(input_shape)
+    #     self.built = True
         
     def call(self, inputs):
         c2, c3, c4, c5 = inputs

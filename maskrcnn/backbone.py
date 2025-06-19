@@ -2,57 +2,78 @@ from tensorflow import keras
 from tensorflow.keras import layers, Model
 
 
-def build_resnet101(
-        input_shape=(None, None, 3), 
-        barch_size=1, 
-        weights="imagenet"):
-    
-    inputs = keras.Input(shape=input_shape, batch_size=barch_size)
-    base_model = keras.applications.ResNet101(
-        include_top=False,
-        weights=weights,
-        input_tensor=inputs,
-        pooling=None
-    )
-    layer_names = [
-        "conv2_block3_out",
-        "conv3_block4_out", 
-        "conv4_block23_out",
-        "conv5_block3_out",
-    ]
-    # get C2, C3, C4, C5 layer outputs
-    outputs = [base_model.get_layer(name).output for name in layer_names]
-    model = Model(
-        inputs=base_model.input, 
-        outputs=outputs,
-        name='resnet101')
-    
-    return model
+class ResNet50Backbone(Model):
+    def __init__(self, 
+                 input_shape, 
+                 batch_size, 
+                 trainable=True,
+                 weights="imagenet", 
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.input_layer = keras.Input(shape=input_shape, 
+                                       batch_size=batch_size,
+                                       dtype='float32')
+        self.base_model = keras.applications.ResNet50(
+            include_top=False,
+            weights=weights,
+            input_tensor=self.input_layer,
+            pooling=None
+        )
+
+        self.out_layers = [
+            self.base_model.get_layer('conv2_block3_out').output,  # C2
+            self.base_model.get_layer('conv3_block4_out').output,  # C3
+            self.base_model.get_layer('conv4_block6_out').output,  # C4
+            self.base_model.get_layer('conv5_block3_out').output   # C5
+        ]
+
+        self.feature_extractor = keras.Model(
+            inputs=self.base_model.input,
+            outputs=self.out_layers,
+            name='resnet50_backbone'
+        )
+        self.feature_extractor.trainable = trainable
 
 
-def build_resnet50(
-        input_shape=(None, None, 3), 
-        barch_size=1, 
-        weights="imagenet"):
+    def call(self, inputs, training=False):
+        return self.feature_extractor(inputs, training=training)
     
-    inputs = keras.Input(shape=input_shape, batch_size=barch_size)
-    base_model = keras.applications.ResNet50(
-        include_top=False,
-        weights=weights,
-        input_tensor=inputs,
-        pooling=None
-    )
-    layer_names = [
-        "conv2_block3_out",
-        "conv3_block4_out", 
-        "conv4_block6_out",
-        "conv5_block3_out",
-    ]
-    # get C2, C3, C4, C5 layer outputs
-    outputs = [base_model.get_layer(name).output for name in layer_names]
-    model = Model(
-        inputs=base_model.input, 
-        outputs=outputs,
-        name='resnet50')
+
+class ResNet101Backbone(Model):
+    def __init__(self, 
+                 input_shape, 
+                 batch_size, 
+                 trainable=True,
+                 weights="imagenet", 
+                 **kwargs):
+        super().__init__(**kwargs)
+        
+        self.input_layer = keras.Input(shape=input_shape, 
+                                       batch_size=batch_size)
+        
+        self.base_model = keras.applications.ResNet101(
+            include_top=False,
+            weights=weights,
+            input_tensor=self.input_layer,
+            pooling=None
+        )
+
+        self.out_layers = [
+            self.base_model.get_layer('conv2_block3_out').output,  # C2
+            self.base_model.get_layer('conv3_block4_out').output,  # C3
+            self.base_model.get_layer('conv4_block23_out').output, # C4
+            self.base_model.get_layer('conv5_block3_out').output   # C5
+        ]
+        
+
+        self.feature_extractor = keras.Model(
+            inputs=self.base_model.input,
+            outputs=self.out_layers,
+            name='resnet101_backbone'
+        )
+        self.feature_extractor.trainable = trainable
+
+
+    def call(self, inputs, training=False):        
+        return self.backbone(inputs, training=training)
     
-    return model

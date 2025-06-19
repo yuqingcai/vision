@@ -13,7 +13,7 @@ def load_image_info(coco, img_ids, img_dir):
     print('loading image info from annotations...')
     time_0 = time.time()
 
-    data = []
+    entries = []
     for img_id in img_ids:
         img_info = coco.loadImgs(img_id)[0]
         file_path = os.path.join(img_dir, img_info['file_name'])
@@ -65,7 +65,7 @@ def load_image_info(coco, img_ids, img_dir):
             print(f"Warning: Annotation details mismatch in {file_path}.")
             continue
         
-        data.append({
+        entries.append({
             'file_path' : file_path, 
             'size' :  (height, width), 
             'bboxes' : bboxes,
@@ -75,7 +75,7 @@ def load_image_info(coco, img_ids, img_dir):
 
     time_1 = time.time()
     print(f"Done (t={time_1 - time_0:.2f}s)")
-    return data
+    return entries
 
 
 def seg_is_rle(seg):
@@ -209,8 +209,9 @@ def create_masks(rles, scale):
                             new_size, 
                             interpolation=cv2.INTER_NEAREST)
         return resized.astype(np.uint8)
-        # Placeholder for testing
-        # return tf.constant([[1, 0],[0, 1]], dtype=np.uint8)
+
+    def rle_to_mask_dummy(rle, scale):
+        return tf.constant([[1, 0],[0, 1]], dtype=np.uint8)
 
     def rle_to_mask_wrap(rle, scale):
         mask = tf.py_function(
@@ -227,7 +228,8 @@ def create_masks(rles, scale):
         fn_output_signature=tf.RaggedTensorSpec(
             shape=(None, None), 
             dtype=tf.uint8)
-    )
+        )
+    
     return masks
 
 
@@ -309,65 +311,51 @@ def preprocess(batch):
     )
 
     batch['image'] = images
-    batch['origin_size'] = batch['size']
     batch['size'] = resizes
     batch['bboxes'] = bboxes_resized
     batch['masks'] = masks
+    # batch['origin_size'] = batch['size']
     
     return batch
 
 
-def create_dataset(ann_file, img_dir, batch_size=4):
+def create_dataset(ann_file, img_dir, batch_size=4, shuffle=False):
     coco = COCO(ann_file)
     img_ids = coco.getImgIds()
     entries = load_image_info(coco, img_ids, img_dir)
-
+    
     ds = tf.data.Dataset.from_generator(
         functools.partial(generator, entries), 
-
-        # file_path 是一个标量，shape=()
-        # bboxes 是一个第1维长度不固定，第2维长度固定等于4的tensor,
-        # 必须使用 RaggedTensorSpec 进行申明，shape=(None, 4)
-        # category_ids 是长度不固定的一维Tensor，shape=(None, )
-        # segmentations 是长度不固定的一维Tensor，shape=(None, )
-        # 
-        # 对于shape的申明，None 表示长度不固定
-        # 
-        # category_ids 和 segmentations，虽然他们的长度不固定，但
-        # 这里只是使用 tf.TensorSpec 来申明，因为他们是一维Tensor, 
-        # 在 batch 时 TensorFlow 会自动将其转换为 RaggedTensor。
-        #
-        # 总结，启用batch时，对于长度不固定的一维Tensor，可以使用
-        # tf.TensorSpec 对其进行申明，TensorFlow 会自动将其转换成 
-        # RaggedTensor，对于多维 Tesnsor，如果某一维的长度不固定，
-        # 则必须使用 RaggedTensorSpec 对其申明，指出哪个维度是不等
-        # 长的。
         output_signature={
             'file_path': tf.TensorSpec(
                 shape=(), 
                 dtype=tf.string
-                ),
+            ),
 
             'size': tf.TensorSpec(
                 shape=(2,), 
                 dtype=tf.int32
-                ), 
+            ), 
 
             'bboxes': tf.RaggedTensorSpec(
                 shape=(None, 4), 
                 dtype=tf.float32
-                ),
+            ),
 
             'category_ids': tf.TensorSpec(
                 shape=(None,), 
-                dtype=tf.int32),
+                dtype=tf.int32
+            ),
 
             'rles': tf.TensorSpec(
                 shape=(None,), 
                 dtype=tf.string
-                ),
+            ),
         })
     
+    if shuffle:
+        ds = ds.shuffle(buffer_size=len(entries))
+
     ds = ds.ragged_batch(batch_size)    
     ds = ds.map(preprocess, num_parallel_calls=tf.data.AUTOTUNE)
     ds = ds.prefetch(tf.data.AUTOTUNE)

@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras import layers, Model
+from tensorflow.keras import layers
 
 """
 生成 anchors
@@ -17,9 +17,9 @@ class AnchorGenerator(layers.Layer):
         self.ratios = tf.constant(ratios, dtype=tf.float32)
         self.scales = tf.constant(scales, dtype=tf.float32)
 
-    def build(self, input_shape):
-        super().build(input_shape)
-        self.built = True
+    # def build(self, input_shape):
+    #     super().build(input_shape)
+    #     self.built = True
 
     def call(self, strides, base_sizes, feature_maps):
         anchors_all = []
@@ -86,9 +86,9 @@ class RPNHead(layers.Layer):
         self.bbox_deltas = layers.Conv2D(num_anchors * 4, 1)
 
     
-    def build(self, input_shape):
-        super().build(input_shape)
-        self.built = True
+    # def build(self, input_shape):
+    #     super().build(input_shape)
+    #     self.built = True
 
     # 输入特征图列表，输出 logits 和 bbox_deltas
     # shape
@@ -132,9 +132,9 @@ class ProposalGenerator(layers.Layer):
         self.nms_thresh = nms_thresh
         self.min_size = min_size
 
-    def build(self, input_shape):
-        super().build(input_shape)
-        self.built = True
+    # def build(self, input_shape):
+    #     super().build(input_shape)
+    #     self.built = True
         
     def call(self, image, anchors, bbox_deltas, logits):
 

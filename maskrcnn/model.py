@@ -1,18 +1,18 @@
 import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers, Model
+from tensorflow.keras import Model
 from fpn import FPNGenerator
-from backbone import build_resnet50, build_resnet101
+from backbone import ResNet50Backbone, ResNet101Backbone
 from rpn import AnchorGenerator, RPNHead, ProposalGenerator
-from loss import rpn_class_loss, rpn_bbox_loss, roi_class_loss, \
-    roi_bbox_loss, roi_mask_loss
+from loss import rpn_class_loss_fn, rpn_bbox_loss_fn, \
+    roi_class_loss_fn, roi_bbox_loss_fn, roi_mask_loss_fn
 from roi import ROIAlign, ROIClassifierHead, ROIBBoxHead, ROIMaskHead
 from utils import sample_and_assign_targets
+import time
 
 class MaskRCNN(Model):
     def __init__(self, 
-                 input_shape=(None, None, 3), 
-                 batch_size=1, 
+                 input_shape, 
+                 batch_size, 
                  backbone_type='resnet50', 
                  **kwargs):
         super().__init__(**kwargs)
@@ -53,62 +53,84 @@ class MaskRCNN(Model):
             hidden_dim=256,
             mask_size=28
         )
-        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
+
+        self.rpn_class_loss_tracker = tf.keras.metrics.Mean(name="rpn_class_loss")
+        self.rpn_bbox_loss_tracker = tf.keras.metrics.Mean(name="rpn_bbox_loss")
+        self.roi_class_loss_tracker = tf.keras.metrics.Mean(name="roi_class_loss")
+        self.roi_bbox_loss_tracker = tf.keras.metrics.Mean(name="roi_bbox_loss")
+        self.roi_mask_loss_tracker = tf.keras.metrics.Mean(name="roi_mask_loss")
+        self.total_loss_tracker = tf.keras.metrics.Mean(name="total_loss")
     
-    def build(self, input_shape):
-        super().build(input_shape)
-        self.built = True
-        self.fpn.build(input_shape)
-        self.anchor_generator.build(input_shape)
-        self.roi_align.build(input_shape)
-        self.rpn_head.build(input_shape)
-        self.proposal_generator.build(input_shape)
+    # def build(self, input_shape):
+    #     super().build(input_shape)
+    #     self.built = True
+    #     self.fpn.build(input_shape)
+    #     self.anchor_generator.build(input_shape)
+    #     self.roi_align.build(input_shape)
+    #     self.rpn_head.build(input_shape)
+    #     self.proposal_generator.build(input_shape)
 
     def build_backbone(self, input_shape, batch_size, backbone_type):
-        if backbone_type == 'resnet101':
-            return build_resnet101(input_shape, batch_size)
-        elif backbone_type == 'resnet50':
-            return build_resnet50(input_shape, batch_size)
+        if backbone_type == 'resnet50':
+            return ResNet50Backbone(input_shape, batch_size)
+        elif backbone_type == 'resnet101':
+            return ResNet101Backbone(input_shape, batch_size)
         else:
             raise ValueError("backbone_type must be 'resnet50' or 'resnet101'")
     
-    def call(self, image, training=False):
+    
+    def call(self, image, size, training=False):
+        t0 = int(time.perf_counter() * 1000)
         c2, c3, c4, c5 = self.backbone(image, training=training)
-        p2, p3, p4, p5 = self.fpn([c2, c3, c4, c5])
-        anchors = self.anchor_generator(
-            strides=[4, 8, 16, 32],
-            base_sizes=[4, 8, 16, 32],
-            feature_maps=[p2, p3, p4, p5]
-        )
-        rpn_logits, rpn_bbox_deltas = self.rpn_head([p2, p3, p4, p5])
-        proposals = self.proposal_generator(
-            image, anchors, rpn_bbox_deltas, rpn_logits
-        )
-        proposal_features = self.roi_align(
-            [p2, p3, p4, p5], 
-            proposals, 
-            strides=[4, 8, 16, 32]
-        )
-        roi_class_logits = self.roi_classifier_head(
-            proposal_features, 
-            training=training
-        )
-        roi_bbox_deltas = self.roi_bbox_head(
-            proposal_features, 
-            training=training
-        )
-        roi_masks = self.roi_mask_head(
-            proposal_features, 
-            training=training
-        )
+        print(f'c2: {c2.shape}, c3: {c3.shape}, c4: {c4.shape}, c5: {c5.shape}')
+        d = int(time.perf_counter() * 1000) - t0
+        print(f'Backbone time: {d:.2f} ms')
+        # print(f'c2: {c2.numpy()}, c3: {c3.numpy()}, c4: {c4.numpy()}, c5: {c5.numpy()}')
+        
+        # p2, p3, p4, p5 = self.fpn([c2, c3, c4, c5])
+        # anchors = self.anchor_generator(
+        #     strides=[4, 8, 16, 32],
+        #     base_sizes=[4, 8, 16, 32],
+        #     feature_maps=[p2, p3, p4, p5]
+        # )
+        # rpn_logits, rpn_bbox_deltas = self.rpn_head([p2, p3, p4, p5])
+        # proposals = self.proposal_generator(
+        #     image, anchors, rpn_bbox_deltas, rpn_logits
+        # )
+        # proposal_features = self.roi_align(
+        #     [p2, p3, p4, p5], 
+        #     proposals, 
+        #     strides=[4, 8, 16, 32]
+        # )
+        # roi_class_logits = self.roi_classifier_head(
+        #     proposal_features, 
+        #     training=training
+        # )
+        # roi_bbox_deltas = self.roi_bbox_head(
+        #     proposal_features, 
+        #     training=training
+        # )
+        # roi_masks = self.roi_mask_head(
+        #     proposal_features, 
+        #     training=training
+        # )
+
+        # return (
+        #     rpn_logits, 
+        #     rpn_bbox_deltas, 
+        #     proposals, 
+        #     roi_class_logits, 
+        #     roi_bbox_deltas, 
+        #     roi_masks
+        # )
 
         return (
-            rpn_logits, 
-            rpn_bbox_deltas, 
-            proposals, 
-            roi_class_logits, 
-            roi_bbox_deltas, 
-            roi_masks
+            0.0, 
+            0.0, 
+            0.0, 
+            0.0, 
+            0.0, 
+            0.0
         )
     
     def compile(self, optimizer):
@@ -116,52 +138,77 @@ class MaskRCNN(Model):
         self.optimizer = optimizer
 
     def train_step(self, inputs):
-        
-        image, \
-        (rpn_labels, \
-         rpn_targets, \
-         gt_boxes, \
-         gt_classes, \
-         gt_masks) = inputs
+        image = inputs['image']
+        size = inputs['size']
+        bboxes = inputs['bboxes']
+        masks = inputs['masks']
 
         with tf.GradientTape() as tape:
-            rpn_logits, \
-            rpn_bbox_deltas, \
-            proposals, \
-            roi_class_logits, \
-            roi_bbox_deltas, \
-            roi_masks = self.call(image, training=True)
 
-            roi_boxes, roi_labels, roi_bbox_targets, roi_mask_targets = \
-                sample_and_assign_targets(
-                    proposals, 
-                    gt_boxes, 
-                    gt_classes, 
-                    gt_masks)
+            rpn_logits, rpn_bbox_deltas, proposals, roi_class_logits, \
+            roi_bbox_deltas, roi_masks = self.call(image, size, training=True)
 
-            # 计算 RPN 损失
-            loss_0 = rpn_class_loss(rpn_logits, rpn_labels)
-            loss_1 = rpn_bbox_loss(
-                rpn_bbox_deltas, 
-                rpn_targets, 
-                rpn_labels
-            )
-            loss_2 = roi_class_loss(roi_class_logits, roi_labels)
-            loss_3 = roi_bbox_loss(
-                roi_bbox_deltas, 
-                roi_bbox_targets, 
-                roi_labels
-            )
-            loss_4 = roi_mask_loss(
-                roi_masks, 
-                roi_mask_targets, 
-                roi_labels
-            )
+            # roi_boxes, roi_labels, roi_bbox_targets, roi_mask_targets = \
+            #     sample_and_assign_targets(
+            #         proposals, 
+            #         gt_boxes, 
+            #         gt_classes, 
+            #         gt_masks)
 
-            total_loss = loss_0 + loss_1 + loss_2 + loss_3 + loss_4
+            # # losses
+            # rpn_class_loss = rpn_class_loss_fn(rpn_logits, rpn_labels)
+            # rpn_bbox_loss = rpn_bbox_loss_fn(
+            #     rpn_bbox_deltas, 
+            #     rpn_targets, 
+            #     rpn_labels
+            # )
+            # roi_class_loss = roi_class_loss_fn(roi_class_logits, roi_labels)
+            # roi_bbox_loss = roi_bbox_loss_fn(
+            #     roi_bbox_deltas, 
+            #     roi_bbox_targets, roi_labels
+            # )
+            # roi_mask_loss = roi_mask_loss_fn(
+            #     roi_masks, 
+            #     roi_mask_targets, 
+            #     roi_labels
+            # )
 
-        grads = tape.gradient(total_loss, self.trainable_variables)
-        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
-        self.loss_tracker.update_state(total_loss)
+            # total_loss = rpn_class_loss + rpn_bbox_loss + \
+            #     roi_class_loss + roi_bbox_loss + roi_mask_loss
         
-        return {"loss": self.loss_tracker.result()}
+
+        # grads = tape.gradient(total_loss, self.trainable_variables)
+        # self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+
+        # self.rpn_class_loss_tracker.update_state(rpn_class_loss)
+        # self.rpn_bbox_loss_tracker.update_state(rpn_bbox_loss)
+        # self.roi_class_loss_tracker.update_state(roi_class_loss)
+        # self.roi_bbox_loss_tracker.update_state(roi_bbox_loss)
+        # self.roi_mask_loss_tracker.update_state(roi_mask_loss)
+        # self.total_loss_tracker.update_state(total_loss)
+        
+        # return {
+        #     'rpn_class_loss': self.rpn_class_loss_tracker.result(),
+        #     'rpn_bbox_loss': self.rpn_bbox_loss_tracker.result(),
+        #     'roi_class_loss': self.roi_class_loss_tracker.result(),
+        #     'roi_bbox_loss': self.roi_bbox_loss_tracker.result(),
+        #     'roi_mask_loss': self.roi_mask_loss_tracker.result(),
+        #     'total_loss': self.total_loss_tracker.result(),
+        # }
+
+        return {
+            'rpn_class_loss': 0.0,
+            'rpn_bbox_loss': 0.0,
+            'roi_class_loss': 0.0,
+            'roi_bbox_loss': 0.0,
+            'roi_mask_loss': 0.0,
+            'total_loss': 0.0,
+        }
+        
+    def reset_metrics(self):
+        self.rpn_class_loss_tracker.reset_states()
+        self.rpn_bbox_loss_tracker.reset_states()
+        self.roi_class_loss_tracker.reset_states()
+        self.roi_bbox_loss_tracker.reset_states()
+        self.roi_mask_loss_tracker.reset_states()
+        self.total_loss_tracker.reset_states()
