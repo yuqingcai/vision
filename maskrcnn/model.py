@@ -81,9 +81,17 @@ class MaskRCNN(Model):
     
     def call(self, image, size, training=False):
         t0 = int(time.perf_counter() * 1000)
+        gpus = tf.config.list_physical_devices('GPU')
+        if gpus:
+            info = tf.config.experimental.get_memory_info('GPU:0')
+            print("Before backbone, GPU memory:", info)
         c2, c3, c4, c5 = self.backbone(image, training=training)
+        if gpus:
+            info = tf.config.experimental.get_memory_info('GPU:0')
+            print("After backbone, GPU memory:", info)
         d = int(time.perf_counter() * 1000) - t0
-        print(f'size:{size.numpy()}, Backbone time: {d:.2f} ms')
+
+        print(f'size:{size}, Backbone time: {d:.2f} ms')
         # print(f'c2: {c2.numpy()}, c3: {c3.numpy()}, c4: {c4.numpy()}, c5: {c5.numpy()}')
         
         # p2, p3, p4, p5 = self.fpn([c2, c3, c4, c5])
@@ -136,7 +144,7 @@ class MaskRCNN(Model):
         super().compile()
         self.optimizer = optimizer
 
-    # @tf.function
+    @tf.function
     def train_step(self, inputs):
         image = inputs['image']
         size = inputs['size']

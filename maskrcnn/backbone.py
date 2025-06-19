@@ -34,7 +34,6 @@ class ResNet50Backbone(Model):
         )
         self.feature_extractor.trainable = trainable
 
-
     def call(self, inputs, training):
         return self.feature_extractor(inputs, training=training)
     

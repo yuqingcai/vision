@@ -355,6 +355,8 @@ def create_dataset(ann_file, img_dir, batch_size=4, shuffle=False):
     
     if shuffle:
         ds = ds.shuffle(buffer_size=len(entries))
+    
+    print(f"Dataset size: {len(entries)/batch_size}")
 
     ds = ds.ragged_batch(batch_size)    
     ds = ds.map(preprocess, num_parallel_calls=tf.data.AUTOTUNE)
