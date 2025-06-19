@@ -82,9 +82,8 @@ class MaskRCNN(Model):
     def call(self, image, size, training=False):
         t0 = int(time.perf_counter() * 1000)
         c2, c3, c4, c5 = self.backbone(image, training=training)
-        print(f'c2: {c2.shape}, c3: {c3.shape}, c4: {c4.shape}, c5: {c5.shape}')
         d = int(time.perf_counter() * 1000) - t0
-        print(f'Backbone time: {d:.2f} ms')
+        print(f'size:{size.numpy()}, Backbone time: {d:.2f} ms')
         # print(f'c2: {c2.numpy()}, c3: {c3.numpy()}, c4: {c4.numpy()}, c5: {c5.numpy()}')
         
         # p2, p3, p4, p5 = self.fpn([c2, c3, c4, c5])
@@ -137,6 +136,7 @@ class MaskRCNN(Model):
         super().compile()
         self.optimizer = optimizer
 
+    # @tf.function
     def train_step(self, inputs):
         image = inputs['image']
         size = inputs['size']
@@ -147,7 +147,7 @@ class MaskRCNN(Model):
 
             rpn_logits, rpn_bbox_deltas, proposals, roi_class_logits, \
             roi_bbox_deltas, roi_masks = self.call(image, size, training=True)
-
+            
             # roi_boxes, roi_labels, roi_bbox_targets, roi_mask_targets = \
             #     sample_and_assign_targets(
             #         proposals, 
