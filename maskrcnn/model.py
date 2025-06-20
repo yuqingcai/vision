@@ -25,12 +25,12 @@ class MaskRCNN(Model):
         
         self.fpn = FPNGenerator(feature_size=256)
 
-        self.anchor_generator = AnchorGenerator(
-            ratios=[0.5, 1, 2], 
-            scales=[8, 16, 32]
-        )
+        self.anchor_generator = AnchorGenerator()
+
         self.roi_align = ROIAlign(output_size=7, sampling_ratio=2)
+
         self.rpn_head = RPNHead(num_anchors=9, feature_size=256)
+
         self.proposal_generator = ProposalGenerator(
             pre_nms_topk=6000,
             post_nms_topk=1000,
@@ -79,27 +79,41 @@ class MaskRCNN(Model):
             raise ValueError("backbone_type must be 'resnet50' or 'resnet101'")
     
     
-    def call(self, image, size, training=False):
-        t0 = int(time.perf_counter() * 1000)
-        gpus = tf.config.list_physical_devices('GPU')
-        if gpus:
-            info = tf.config.experimental.get_memory_info('GPU:0')
-            print("Before backbone, GPU memory:", info)
-        c2, c3, c4, c5 = self.backbone(image, training=training)
-        if gpus:
-            info = tf.config.experimental.get_memory_info('GPU:0')
-            print("After backbone, GPU memory:", info)
-        d = int(time.perf_counter() * 1000) - t0
+    def call(self, images, sizes, training=False):
 
-        print(f'size:{size}, Backbone time: {d:.2f} ms')
-        # print(f'c2: {c2.numpy()}, c3: {c3.numpy()}, c4: {c4.numpy()}, c5: {c5.numpy()}')
+        # gpus = tf.config.list_physical_devices('GPU')
+        # if gpus:
+        #     info = tf.config.experimental.get_memory_info('GPU:0')
+        #     print("Before backbone, GPU memory:", info)
+        c2, c3, c4, c5 = self.backbone(images, training=training)
+        # if gpus:
+        #     info = tf.config.experimental.get_memory_info('GPU:0')
+        #     print("After backbone, GPU memory:", info)
+        tf.print('c2 shape:', tf.shape(c2), 
+                 'c3 shape:', tf.shape(c3), 
+                 'c4 shape:', tf.shape(c4), 
+                 'c5 shape:', tf.shape(c5))
         
-        # p2, p3, p4, p5 = self.fpn([c2, c3, c4, c5])
-        # anchors = self.anchor_generator(
-        #     strides=[4, 8, 16, 32],
-        #     base_sizes=[4, 8, 16, 32],
-        #     feature_maps=[p2, p3, p4, p5]
-        # )
+        p2, p3, p4, p5 = self.fpn([c2, c3, c4, c5])
+        tf.print('p2 shape:', tf.shape(p2), 
+                 'p3 shape:', tf.shape(p3), 
+                 'p4 shape:', tf.shape(p4), 
+                 'p5 shape:', tf.shape(p5))
+        
+        # strides of p2, p3, p4, p5 are 4, 8, 16, 32 respectively
+        # base_sizes of p2, p3, p4, p5 are 32, 64, 128, 256 respectively
+        # ratios is height:width
+        anchors = self.anchor_generator(
+            feature_maps=[p2, p3, p4, p5],
+            strides=[4, 8, 16, 32],
+            base_sizes=[32, 64, 128, 256],
+            ratios=[0.5, 1, 2], 
+            scales=[1.0, 1.5, 2.0],
+            origin_sizes=sizes
+        )
+        tf.print('anchors shape:', tf.shape(anchors))
+        
+
         # rpn_logits, rpn_bbox_deltas = self.rpn_head([p2, p3, p4, p5])
         # proposals = self.proposal_generator(
         #     image, anchors, rpn_bbox_deltas, rpn_logits
@@ -145,11 +159,11 @@ class MaskRCNN(Model):
         self.optimizer = optimizer
 
     @tf.function
-    def train_step(self, inputs):
-        image = inputs['image']
-        size = inputs['size']
-        bboxes = inputs['bboxes']
-        masks = inputs['masks']
+    def train_step(self, image, size):
+        # image = inputs['image']
+        # size = inputs['size']
+        # bboxes = inputs['bboxes']
+        # masks = inputs['masks']
 
         with tf.GradientTape() as tape:
 
@@ -203,7 +217,6 @@ class MaskRCNN(Model):
         #     'roi_mask_loss': self.roi_mask_loss_tracker.result(),
         #     'total_loss': self.total_loss_tracker.result(),
         # }
-
         return {
             'rpn_class_loss': 0.0,
             'rpn_bbox_loss': 0.0,

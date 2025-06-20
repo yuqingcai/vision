@@ -12,65 +12,94 @@ anchors（通常几百到几千），用于后续 ROI Head 的
 精细分类和回归。
 """
 class AnchorGenerator(layers.Layer):
-    def __init__(self, ratios=[0.5, 1, 2], scales=[8, 16, 32], **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.ratios = tf.constant(ratios, dtype=tf.float32)
-        self.scales = tf.constant(scales, dtype=tf.float32)
 
-    # def build(self, input_shape):
-    #     super().build(input_shape)
-    #     self.built = True
+    def call(self, 
+             feature_maps, 
+             strides, 
+             base_sizes, 
+             ratios, 
+             scales, 
+             origin_sizes):
+        
+        ratios = tf.constant(ratios, dtype=tf.float32)
+        scales = tf.constant(scales, dtype=tf.float32)
 
-    def call(self, strides, base_sizes, feature_maps):
+        tf.print('origin_sizes shape:', tf.shape(origin_sizes))
+        
+        if len(feature_maps) != len(strides) or \
+           len(feature_maps) != len(base_sizes):
+            raise ValueError("feature_maps, strides, and base_sizes must have the same length.")
+        
         anchors_all = []
-        for feature_map, stride, base_size in \
+        for feature_map_batch, stride, base_size in \
             zip(feature_maps, strides, base_sizes):
 
-            shape = tf.shape(feature_map)
-            H = tf.cast(shape[1], tf.int32)
-            W = tf.cast(shape[2], tf.int32)
+            anchors_batch = tf.map_fn(
+                lambda args: self.generate(args[0], 
+                                           args[1],
+                                           ratios,
+                                           scales,
+                                           stride,
+                                           base_size
+                ),
+                elems=(feature_map_batch, origin_sizes),
+                fn_output_signature=tf.RaggedTensorSpec(
+                    shape=(None, 4), 
+                    dtype=tf.float32
+                ),
+                parallel_iterations=32
+            )
 
-            # 生成所有 ratio/scale 组合
-            base_size = tf.cast(base_size, tf.float32) 
-            ratios = tf.reshape(self.ratios, [-1, 1])
-            scales = tf.reshape(self.scales, [1, -1])
-            ws = tf.sqrt(base_size * base_size * scales * scales / ratios)
-            hs = ws * ratios
-            ws = tf.reshape(ws, [-1])
-            hs = tf.reshape(hs, [-1])
+            anchors_all.append(anchors_batch)
 
-            # [A, 4]
-            x1 = -ws / 2
-            y1 = -hs / 2
-            x2 = ws / 2
-            y2 = hs / 2
-            base_anchors = tf.stack([x1, y1, x2, y2], axis=1)
+        for anchors_batch in anchors_all:
+            tf.print('anchors shape:', tf.shape(anchors_batch))
 
-            # 平移到所有位置
-            # anchor 的数量只与特征图的空间尺寸（高 H，宽 W）和每个位置的 
-            # base_anchors 数量有关，与特征图的深度（通道数）无关。
-            # 每层 anchor 数量的计算公式为：
-            # base_anchor_num_per_dot = len(ratios) * len(scales)
-            # anchor_num_per_layer = H × W × base_anchor_num_per_dot
-            shift_x = (tf.range(W, dtype=tf.float32) + 0.5) * stride
-            shift_y = (tf.range(H, dtype=tf.float32) + 0.5) * stride
-            shift_x, shift_y = tf.meshgrid(shift_x, shift_y)
-            shifts = tf.stack([
-                tf.reshape(shift_x, [-1]),
-                tf.reshape(shift_y, [-1]),
-                tf.reshape(shift_x, [-1]),
-                tf.reshape(shift_y, [-1])
-            ], axis=1)  # [K, 4]
-            A = tf.shape(base_anchors)[0]
-            K = tf.shape(shifts)[0]
-            anchors = tf.reshape(base_anchors, [1, A, 4]) + \
-                tf.reshape(shifts, [K, 1, 4])
-            anchors = tf.reshape(anchors, [K * A, 4])
-            anchors_all.append(anchors)
-        # 合并所有层的 anchors
-
-        return tf.concat(anchors_all, axis=0)
+        return tf.constant([0.0, 0.0], dtype=tf.float32)
     
+    def generate(self, 
+                 feature_map, 
+                 origin_size, 
+                 ratios, 
+                 scales, 
+                 stride, 
+                 base_size):
+        
+        shape = tf.shape(feature_map)
+        height = tf.cast(shape[1], tf.int32)
+        width = tf.cast(shape[2], tf.int32)
+
+        base_size = tf.cast(base_size, tf.float32)
+        ratios = tf.reshape(ratios, [-1, 1]) # [3, 1]
+        scales = tf.reshape(scales, [1, -1]) # [1, 3]
+
+        area = ((base_size * scales) ** 2)
+        ws = tf.sqrt(area)/ratios
+        hs = ws * ratios
+
+        ws = tf.reshape(ws, [-1])
+        hs = tf.reshape(hs, [-1])
+
+        x1 = -ws / 2
+        y1 = -hs / 2
+        x2 = ws / 2
+        y2 = hs / 2
+        base_anchors = tf.stack([x1, y1, x2, y2], axis=1)
+        tf.print('base_anchors shape:', base_anchors)
+        
+        dummy = [
+            [1.0, 2.0, 3.0, 4.0],
+            [1.0, 2.0, 3.0, 4.0],
+            [1.0, 2.0, 3.0, 4.0],
+            [1.0, 2.0, 3.0, 4.0],
+            [1.0, 2.0, 3.0, 4.0],
+            [1.0, 2.0, 3.0, 4.0],
+            [1.0, 2.0, 3.0, 4.0],
+            [1.0, 2.0, 3.0, 4.0],
+            ]
+        return tf.ragged.constant(dummy, dtype=tf.float32)
 
 class RPNHead(layers.Layer):
     def __init__(self, num_anchors=9, feature_size=256, **kwargs):

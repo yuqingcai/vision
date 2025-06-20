@@ -1,7 +1,8 @@
 from tensorflow import keras
 from tensorflow.keras import layers, Model
 
-
+# strides of feature maps c2, c3, c4, c5 
+# are 4, 8, 16, 32 respectively
 class ResNet50Backbone(Model):
     def __init__(self, 
                  input_shape, 
