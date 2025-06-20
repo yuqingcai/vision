@@ -629,3 +629,160 @@ def build_resnet101(
         name='resnet101')
     
     return model
+
+
+
+
+        # anchors_all = []
+        # for feature_map, stride, base_size in \
+        #     zip(feature_maps, strides, base_sizes):
+
+        #     shape = tf.shape(feature_map)
+        #     H = tf.cast(shape[1], tf.int32)
+        #     W = tf.cast(shape[2], tf.int32)
+
+        #     # 生成所有 ratio/scale 组合
+        #     base_size = tf.cast(base_size, tf.float32) 
+        #     ratios = tf.reshape(self.ratios, [-1, 1])
+        #     scales = tf.reshape(self.scales, [1, -1])
+        #     ws = tf.sqrt(base_size * base_size * scales * scales / ratios)
+        #     hs = ws * ratios
+        #     ws = tf.reshape(ws, [-1])
+        #     hs = tf.reshape(hs, [-1])
+
+        #     # [A, 4]
+        #     x1 = -ws / 2
+        #     y1 = -hs / 2
+        #     x2 = ws / 2
+        #     y2 = hs / 2
+        #     base_anchors = tf.stack([x1, y1, x2, y2], axis=1)
+
+        #     # 平移到所有位置
+        #     # anchor 的数量只与特征图的空间尺寸（高 H，宽 W）和每个位置的 
+        #     # base_anchors 数量有关，与特征图的深度（通道数）无关。
+        #     # 每层 anchor 数量的计算公式为：
+        #     # base_anchor_num_per_dot = len(ratios) * len(scales)
+        #     # anchor_num_per_layer = H × W × base_anchor_num_per_dot
+        #     shift_x = (tf.range(W, dtype=tf.float32) + 0.5) * stride
+        #     shift_y = (tf.range(H, dtype=tf.float32) + 0.5) * stride
+        #     shift_x, shift_y = tf.meshgrid(shift_x, shift_y)
+        #     shifts = tf.stack([
+        #         tf.reshape(shift_x, [-1]),
+        #         tf.reshape(shift_y, [-1]),
+        #         tf.reshape(shift_x, [-1]),
+        #         tf.reshape(shift_y, [-1])
+        #     ], axis=1)  # [K, 4]
+        #     A = tf.shape(base_anchors)[0]
+        #     K = tf.shape(shifts)[0]
+        #     anchors = tf.reshape(base_anchors, [1, A, 4]) + \
+        #         tf.reshape(shifts, [K, 1, 4])
+        #     anchors = tf.reshape(anchors, [K * A, 4])
+        #     anchors_all.append(anchors)
+        # # 合并所有层的 anchors
+
+        # return tf.concat(anchors_all, axis=0)
+
+base_size: 32 
+ws: [
+    [45.2548332 67.8822479 90.5096664]
+    [32 48 64]
+    [22.6274166 33.941124 45.2548332]
+] 
+hs: [
+    [22.6274166 33.941124 45.2548332]
+    [32 48 64]
+    [45.2548332 67.8822479 90.5096664]
+] 
+
+wsxhs: [
+    [1023.99994 2303.99976 4095.99976]
+    [1024 2304 4096]
+    [1023.99994 2303.99976 4095.99976]
+]
+
+
+base size: 32 area: [[1024 2304 4096]]
+
+ws: [[64 96 128]
+ [32 48 64]
+ [16 24 32]]
+hs: [[32 48 64]
+ [32 48 64]
+ [32 48 64]]
+base size: 32 area: [[1024 2304 4096]]
+ws: [[64 96 128]
+ [32 48 64]
+ [16 24 32]]
+hs: [[32 48 64]
+ [32 48 64]
+ [32 48 64]]
+base size: 32 area: [[1024 2304 4096]]
+ws: [[64 96 128]
+ [32 48 64]
+ [16 24 32]]
+hs: [[32 48 64]
+ [32 48 64]
+ [32 48 64]]
+base size: 32 area: [[1024 2304 4096]]
+ws: [[64 96 128]
+ [32 48 64]
+ [16 24 32]]
+hs: [[32 48 64]
+ [32 48 64]
+ [32 48 64]]
+base size: 32 area: [[1024 2304 4096]]
+ws: [[64 96 128]
+ [32 48 64]
+ [16 24 32]]
+hs: [[32 48 64]
+ [32 48 64]
+ [32 48 64]]
+base size: 32 area: [[1024 2304 4096]]
+ws: [[64 96 128]
+ [32 48 64]
+ [16 24 32]]
+hs: [[32 48 64]
+ [32 48 64]
+ [32 48 64]]
+base size: 32 area: [[1024 2304 4096]]
+ws: [[64 96 128]
+ [32 48 64]
+ [16 24 32]]
+hs: [[32 48 64]
+ [32 48 64]
+ [32 48 64]]
+base size: 32 area: [[1024 2304 4096]]
+ws: [[64 96 128]
+ [32 48 64]
+ [16 24 32]]
+hs: [[32 48 64]
+ [32 48 64]
+ [32 48 64]]
+base size: 32 area: [[1024 2304 4096]]
+ws: [[64 96 128]
+ [32 48 64]
+ [16 24 32]]
+hs: [[32 48 64]
+ [32 48 64]
+ [32 48 64]]
+base size: 32 area: [[1024 2304 4096]]
+ws: [[64 96 128]
+ [32 48 64]
+ [16 24 32]]
+hs: [[32 48 64]
+ [32 48 64]
+ [32 48 64]]
+base size: 32 area: [[1024 2304 4096]]
+ws: [[64 96 128]
+ [32 48 64]
+ [16 24 32]]
+hs: [[32 48 64]
+ [32 48 64]
+ [32 48 64]]
+base size: 32 area: [[1024 2304 4096]]
+ws: [[64 96 128]
+ [32 48 64]
+ [16 24 32]]
+hs: [[32 48 64]
+ [32 48 64]
+ [32 48 64]]
