@@ -14,7 +14,7 @@ import itertools
 import random
 from tensorflow.keras import mixed_precision
 
-tf.config.set_visible_devices([], 'GPU')
+# tf.config.set_visible_devices([], 'GPU')
 # gpus = tf.config.experimental.list_physical_devices('GPU')
 # for gpu in gpus:
 #     tf.config.experimental.set_memory_growth(gpu, True)
@@ -25,7 +25,7 @@ train_img_dir = os.path.join(coco_root, 'train2017')
 ann_file = os.path.join(coco_root, 'annotations/instances_train2017.json')
 
 if __name__ == '__main__':
-    batch_size = 12
+    batch_size = 10
     ds_train = create_dataset(
         ann_file=ann_file,
         img_dir=train_img_dir,

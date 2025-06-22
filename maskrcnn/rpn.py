@@ -26,46 +26,50 @@ class AnchorGenerator(layers.Layer):
         ratios = tf.constant(ratios, dtype=tf.float32)
         scales = tf.constant(scales, dtype=tf.float32)
 
-        tf.print('origin_sizes shape:', tf.shape(origin_sizes))
+        # tf.print('origin_sizes shape:', tf.shape(origin_sizes))
         
         if len(feature_maps) != len(strides) or \
            len(feature_maps) != len(base_sizes):
             raise ValueError("feature_maps, strides, and base_sizes must have the same length.")
         
-        anchors_all = []
-        for feature_map_batch, stride, base_size in \
+        indices = tf.range(tf.shape(feature_maps[0])[0])
+        anchors = []
+        for feature_map, stride, base_size in \
             zip(feature_maps, strides, base_sizes):
-
-            anchors_batch = tf.map_fn(
+            
+            anchors_feature_map = tf.map_fn(
                 lambda args: self.generate(args[0], 
                                            args[1],
+                                           args[2],
                                            ratios,
                                            scales,
                                            stride,
-                                           base_size
+                                           base_size,
                 ),
-                elems=(feature_map_batch, origin_sizes),
+                elems=(feature_map, origin_sizes, indices),
                 fn_output_signature=tf.RaggedTensorSpec(
                     shape=(None, 4), 
                     dtype=tf.float32
                 ),
                 parallel_iterations=32
             )
-
-            anchors_all.append(anchors_batch)
-
-        for anchors_batch in anchors_all:
-            tf.print('anchors shape:', tf.shape(anchors_batch))
+            
+            anchors.append(anchors_feature_map)
+        
+        anchors = tf.concat(anchors, axis=1)
+        tf.print('anchors_concat:', anchors, summarize=-1)
 
         return tf.constant([0.0, 0.0], dtype=tf.float32)
     
     def generate(self, 
                  feature_map, 
                  origin_size, 
+                 index,
                  ratios, 
                  scales, 
                  stride, 
-                 base_size):
+                 base_size
+                 ):
         
         shape = tf.shape(feature_map)
         height = tf.cast(shape[1], tf.int32)
@@ -87,19 +91,10 @@ class AnchorGenerator(layers.Layer):
         x2 = ws / 2
         y2 = hs / 2
         base_anchors = tf.stack([x1, y1, x2, y2], axis=1)
-        tf.print('base_anchors shape:', base_anchors)
         
-        dummy = [
-            [1.0, 2.0, 3.0, 4.0],
-            [1.0, 2.0, 3.0, 4.0],
-            [1.0, 2.0, 3.0, 4.0],
-            [1.0, 2.0, 3.0, 4.0],
-            [1.0, 2.0, 3.0, 4.0],
-            [1.0, 2.0, 3.0, 4.0],
-            [1.0, 2.0, 3.0, 4.0],
-            [1.0, 2.0, 3.0, 4.0],
-            ]
-        return tf.ragged.constant(dummy, dtype=tf.float32)
+        dummy = tf.fill([index+1, 4], tf.cast(index+1, dtype=tf.float32))
+        return tf.RaggedTensor.from_tensor(dummy)
+
 
 class RPNHead(layers.Layer):
     def __init__(self, num_anchors=9, feature_size=256, **kwargs):
@@ -172,7 +167,7 @@ class ProposalGenerator(layers.Layer):
         ha = anchors[:, 3] - anchors[:, 1]
         xa = anchors[:, 0] + 0.5 * wa
         ya = anchors[:, 1] + 0.5 * ha
-
+        
         dx = bbox_deltas[:, 0]
         dy = bbox_deltas[:, 1]
         dw = bbox_deltas[:, 2]

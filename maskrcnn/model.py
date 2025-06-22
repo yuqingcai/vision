@@ -81,24 +81,24 @@ class MaskRCNN(Model):
     
     def call(self, images, sizes, training=False):
 
-        # gpus = tf.config.list_physical_devices('GPU')
-        # if gpus:
-        #     info = tf.config.experimental.get_memory_info('GPU:0')
-        #     print("Before backbone, GPU memory:", info)
+        gpus = tf.config.list_physical_devices('GPU')
+        if gpus:
+            info = tf.config.experimental.get_memory_info('GPU:0')
+            print("Before backbone, GPU memory:", info)
         c2, c3, c4, c5 = self.backbone(images, training=training)
-        # if gpus:
-        #     info = tf.config.experimental.get_memory_info('GPU:0')
-        #     print("After backbone, GPU memory:", info)
-        tf.print('c2 shape:', tf.shape(c2), 
-                 'c3 shape:', tf.shape(c3), 
-                 'c4 shape:', tf.shape(c4), 
-                 'c5 shape:', tf.shape(c5))
+        if gpus:
+            info = tf.config.experimental.get_memory_info('GPU:0')
+            print("After backbone, GPU memory:", info)
+        # tf.print('c2 shape:', tf.shape(c2), 
+        #          'c3 shape:', tf.shape(c3), 
+        #          'c4 shape:', tf.shape(c4), 
+        #          'c5 shape:', tf.shape(c5))
         
         p2, p3, p4, p5 = self.fpn([c2, c3, c4, c5])
-        tf.print('p2 shape:', tf.shape(p2), 
-                 'p3 shape:', tf.shape(p3), 
-                 'p4 shape:', tf.shape(p4), 
-                 'p5 shape:', tf.shape(p5))
+        # tf.print('p2 shape:', tf.shape(p2), 
+        #          'p3 shape:', tf.shape(p3), 
+        #          'p4 shape:', tf.shape(p4), 
+        #          'p5 shape:', tf.shape(p5))
         
         # strides of p2, p3, p4, p5 are 4, 8, 16, 32 respectively
         # base_sizes of p2, p3, p4, p5 are 32, 64, 128, 256 respectively
@@ -111,7 +111,7 @@ class MaskRCNN(Model):
             scales=[1.0, 1.5, 2.0],
             origin_sizes=sizes
         )
-        tf.print('anchors shape:', tf.shape(anchors))
+        # tf.print('anchors shape:', tf.shape(anchors))
         
 
         # rpn_logits, rpn_bbox_deltas = self.rpn_head([p2, p3, p4, p5])
@@ -164,7 +164,7 @@ class MaskRCNN(Model):
         # size = inputs['size']
         # bboxes = inputs['bboxes']
         # masks = inputs['masks']
-
+        
         with tf.GradientTape() as tape:
 
             rpn_logits, rpn_bbox_deltas, proposals, roi_class_logits, \
