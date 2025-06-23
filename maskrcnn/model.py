@@ -84,14 +84,13 @@ class MaskRCNN(Model):
     
     
     def call(self, images, origin_sizes, training=False):
-
-        # gpus = tf.config.list_physical_devices('GPU')
-        # if gpus:
-        #     info = tf.config.experimental.get_memory_info('GPU:0')
-        #     print("Before backbone, GPU memory:", info)
+        gpus = tf.config.list_physical_devices('GPU')
+        if gpus:
+            info = tf.config.experimental.get_memory_info('GPU:0')
+            print("Before backbone, GPU memory:", info)
 
         c2, c3, c4, c5 = self.backbone(images, training=training)
-  
+
         p2, p3, p4, p5 = self.fpn([c2, c3, c4, c5])
         
         anchors = self.anchor_generator(
@@ -102,13 +101,12 @@ class MaskRCNN(Model):
             scales=self.anchor_scales,
             origin_sizes=origin_sizes
         )
-        tf.print('anchors shape:', tf.shape(anchors))
+        # tf.print('anchors shape:', tf.shape(anchors))
 
         rpn_class_logits, rpn_bbox_deltas = self.rpn_head([p2, p3, p4, p5])
-        tf.print('rpn_class_logits shape:', tf.shape(rpn_class_logits))
-        tf.print('rpn_bbox_deltas shape:', tf.shape(rpn_bbox_deltas))
+        # tf.print('rpn_class_logits shape:', tf.shape(rpn_class_logits))
+        # tf.print('rpn_bbox_deltas shape:', tf.shape(rpn_bbox_deltas))
         
-
         # proposals = self.proposal_generator(
         #     image, origin_sizes, anchors, rpn_bbox_deltas, rpn_class_logits
         # )
@@ -134,9 +132,9 @@ class MaskRCNN(Model):
         #     training=training
         # )
 
-        # if gpus:
-        #     info = tf.config.experimental.get_memory_info('GPU:0')
-        #     print("After backbone, GPU memory:", info)
+        if gpus:
+            info = tf.config.experimental.get_memory_info('GPU:0')
+            print("After backbone, GPU memory:", info)
 
         # return (
         #     rpn_class_logits, 
@@ -160,7 +158,7 @@ class MaskRCNN(Model):
         super().compile()
         self.optimizer = optimizer
 
-    @tf.function
+    @tf.function(reduce_retracing=True)
     def train_step(self, image, size):
         # image = inputs['image']
         # size = inputs['size']

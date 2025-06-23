@@ -20,12 +20,16 @@ from tensorflow.keras import mixed_precision
 #     tf.config.experimental.set_memory_growth(gpu, True)
 # mixed_precision.set_global_policy('mixed_float16')
 
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    print(gpus)
+
 coco_root = '../../dataset/coco2017/'
 train_img_dir = os.path.join(coco_root, 'train2017')
 ann_file = os.path.join(coco_root, 'annotations/instances_train2017.json')
 
 if __name__ == '__main__':
-    batch_size = 10
+    batch_size = 12
     ds_train = create_dataset(
         ann_file=ann_file,
         img_dir=train_img_dir,
@@ -46,7 +50,7 @@ if __name__ == '__main__':
     model.summary()
 
     # Train the model
-    tf.profiler.experimental.start("logs/profile")
+    # tf.profiler.experimental.start("logs/profile")
 
     epochs = 10
     for epoch in range(epochs):
@@ -55,7 +59,7 @@ if __name__ == '__main__':
             loss = model.train_step(batch['image'], batch['size'])
             t_1 = int(time.time() * 1000)
             print(f'Epoch {epoch}, Step {step}, duration: {t_1 - t_0 :.2f} ms')
-            if step == 10:
-                tf.profiler.experimental.stop()
+            # if step == 10:
+            #     tf.profiler.experimental.stop()
             
         model.reset_metrics()
