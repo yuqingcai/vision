@@ -36,7 +36,7 @@ if __name__ == '__main__':
     model = MaskRCNN(
         input_shape=(None, None, 3),
         batch_size=batch_size,
-        backbone_type='resnet50'
+        backbone_type='resnet101'
     )
 
     model.compile(

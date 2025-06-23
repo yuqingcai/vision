@@ -74,5 +74,5 @@ class ResNet101Backbone(Model):
 
 
     def call(self, inputs, training):        
-        return self.backbone(inputs, training=training)
+        return self.feature_extractor(inputs, training=training)
     
