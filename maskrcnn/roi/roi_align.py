@@ -12,8 +12,8 @@ class ROIAlign(layers.Layer):
         self.feature_map_size = feature_map_size
 
     def call(self, feature_maps, rois):
-        tf.print('feature_maps shape:', [tf.shape(fm) for fm in feature_maps])
-        tf.print('rois shape:', tf.shape(rois))
+        # tf.print('feature_maps shape:', [tf.shape(fm) for fm in feature_maps])
+        # tf.print('rois shape:', tf.shape(rois))
 
         features = tf.map_fn(
             lambda args: self.features(args[0], args[1]),
@@ -28,7 +28,7 @@ class ROIAlign(layers.Layer):
             ),
             parallel_iterations=32
         )
-        tf.print('features shape:', tf.shape(features))
+        # tf.print('features shape:', tf.shape(features))
         return features
     
 

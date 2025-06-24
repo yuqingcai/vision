@@ -14,7 +14,7 @@ import itertools
 import random
 from tensorflow.keras import mixed_precision
 
-os.environ["GPU_ENABLE"] = "FALSE"
+os.environ["GPU_ENABLE"] = "TRUE"
 
 if os.environ.get("GPU_ENABLE", "FALSE") == "FALSE":
     tf.config.set_visible_devices([], 'GPU')
@@ -56,8 +56,8 @@ if __name__ == '__main__':
             d0 = time.time() - t_0
             d1 = time.time() - t_1
             print(f'epoch {epoch}, step {step}, '
-                  f'setp duration: {d1: .2f}s, '
-                  f'total duration: {d0: .2f}s '
+                  f'setp duration: {d1:.2f}s, '
+                  f'total duration: {d0:.2f}s '
             )
 
         model.reset_metrics()
