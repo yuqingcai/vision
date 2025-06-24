@@ -14,15 +14,15 @@ import itertools
 import random
 from tensorflow.keras import mixed_precision
 
-# tf.config.set_visible_devices([], 'GPU')
+os.environ["GPU_ENABLE"] = "FALSE"
+
+if os.environ.get("GPU_ENABLE", "FALSE") == "FALSE":
+    tf.config.set_visible_devices([], 'GPU')
+
 # gpus = tf.config.experimental.list_physical_devices('GPU')
 # for gpu in gpus:
 #     tf.config.experimental.set_memory_growth(gpu, True)
 # mixed_precision.set_global_policy('mixed_float16')
-
-gpus = tf.config.list_physical_devices('GPU')
-if gpus:
-    print(gpus)
 
 coco_root = '../../dataset/coco2017/'
 train_img_dir = os.path.join(coco_root, 'train2017')
@@ -42,24 +42,22 @@ if __name__ == '__main__':
         batch_size=batch_size,
         backbone_type='resnet101'
     )
-
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
     )
-
     model.summary()
 
-    # Train the model
-    # tf.profiler.experimental.start("logs/profile")
-
     epochs = 10
+    t_0 = time.time()
     for epoch in range(epochs):
         for step, batch in enumerate(ds_train):
-            t_0 = int(time.time() * 1000)
+            t_1 = time.time()
             loss = model.train_step(batch['image'], batch['size'])
-            t_1 = int(time.time() * 1000)
-            print(f'Epoch {epoch}, Step {step}, duration: {t_1 - t_0 :.2f} ms')
-            # if step == 10:
-            #     tf.profiler.experimental.stop()
-            
+            d0 = time.time() - t_0
+            d1 = time.time() - t_1
+            print(f'epoch {epoch}, step {step}, '
+                  f'setp duration: {d1: .2f}s, '
+                  f'total duration: {d0: .2f}s '
+            )
+
         model.reset_metrics()

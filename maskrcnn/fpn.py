@@ -81,3 +81,10 @@ class FPNGenerator(layers.Layer):
 
         return [p2, p3, p4, p5]
     
+    # strides of p2, p3, p4, p5 are 4, 8, 16, 32
+    def strides(self):
+        return [4, 8, 16, 32]
+    
+    # base_sizes of p2, p3, p4, p5 are 32, 64, 128, 256
+    def base_sizes(self):
+        return [32, 64, 128, 256]

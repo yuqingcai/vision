@@ -12,7 +12,7 @@ class AnchorGenerator(layers.Layer):
              base_sizes, 
              ratios, 
              scales, 
-             origin_sizes):
+             image_sizes):
         
         ratios = tf.constant(ratios, dtype=tf.float32)
         scales = tf.constant(scales, dtype=tf.float32)
@@ -28,14 +28,10 @@ class AnchorGenerator(layers.Layer):
             zip(feature_maps, strides, base_sizes):
             
             anchors_feature_map = tf.map_fn(
-                lambda args: self.generate(args[0], 
-                                           args[1],
-                                           ratios,
-                                           scales,
-                                           stride,
-                                           base_size,
+                lambda args: self.generate(
+                    args[0], args[1], ratios, scales, stride, base_size,
                 ),
-                elems=(feature_map, origin_sizes),
+                elems=(feature_map, image_sizes),
                 fn_output_signature=tf.TensorSpec(
                     shape=(None, 4), 
                     dtype=tf.float32
@@ -51,12 +47,11 @@ class AnchorGenerator(layers.Layer):
     
     def generate(self, 
                  feature_map, 
-                 origin_size, 
+                 image_size, 
                  ratios, 
                  scales, 
                  stride, 
-                 base_size
-                 ):
+                 base_size):
         
         # generate base anchors
         base_size = tf.cast(base_size, tf.float32)
@@ -64,16 +59,16 @@ class AnchorGenerator(layers.Layer):
         scales = tf.reshape(scales, [1, -1]) # [1, 3]
 
         area = ((base_size * scales) ** 2)
-        ws = tf.sqrt(area)/ratios
-        hs = ws * ratios
-        ws = tf.reshape(ws, [-1])
-        hs = tf.reshape(hs, [-1])
-        x1 = -ws / 2
-        y1 = -hs / 2
-        x2 = ws / 2
-        y2 = hs / 2
+        w_s = tf.sqrt(area)/ratios
+        h_s = w_s * ratios
+        w_s = tf.reshape(w_s, [-1])
+        h_s = tf.reshape(h_s, [-1])
+        x_1 = -w_s / 2
+        y_1 = -h_s / 2
+        x_2 = w_s / 2
+        y_2 = h_s / 2
         # base_anchors shape is [A, 4]
-        base_anchors = tf.stack([x1, y1, x2, y2], axis=1)
+        base_anchors = tf.stack([x_1, y_1, x_2, y_2], axis=1)
 
         # shift base anchors to all locations on the feature map
         # shifts shape is [K, 4]
@@ -98,13 +93,13 @@ class AnchorGenerator(layers.Layer):
         anchors = tf.reshape(anchors, [K * A, 4])
 
         # clip anchors to the image size
-        origin_height = tf.cast(origin_size[0], tf.float32)
-        origin_width = tf.cast(origin_size[1], tf.float32)
+        height = tf.cast(image_size[0], tf.float32)
+        width = tf.cast(image_size[1], tf.float32)
         anchors = tf.stack([
-            tf.clip_by_value(anchors[:, 0], 0, origin_width - 1),
-            tf.clip_by_value(anchors[:, 1], 0, origin_height - 1),
-            tf.clip_by_value(anchors[:, 2], 0, origin_width - 1),
-            tf.clip_by_value(anchors[:, 3], 0, origin_height - 1)
+            tf.clip_by_value(anchors[:, 0], 0, width - 1),
+            tf.clip_by_value(anchors[:, 1], 0, height - 1),
+            tf.clip_by_value(anchors[:, 2], 0, width - 1),
+            tf.clip_by_value(anchors[:, 3], 0, height - 1)
         ], axis=1)
         
         return anchors
@@ -123,12 +118,11 @@ class RPNHead(layers.Layer):
         self.class_logits = layers.Conv2D(anchors_per_location, 1)
         self.bbox_deltas = layers.Conv2D(anchors_per_location * 4, 1)
     
-
     def call(self, feature_maps):
         class_logits_all = []
         bbox_deltas_all = []
 
-        for i, feature_map in enumerate(feature_maps):
+        for feature_map in feature_maps:
             x = self.conv(feature_map)
             class_logits = self.class_logits(x)
             bbox_deltas = self.bbox_deltas(x)
@@ -159,64 +153,85 @@ class ProposalGenerator(layers.Layer):
         self.nms_thresh = nms_thresh
         self.min_size = min_size
         
-    def call(self, images, origin_sizes, anchors, bbox_deltas, logits):
+    def call(self, image_sizes, anchors, class_logits, bbox_deltas):
+        proposals = tf.map_fn(
+            lambda args: self.generate(
+                args[0], args[1], args[2], args[3],
+            ),
+            elems=(image_sizes, anchors, class_logits, bbox_deltas),
+            fn_output_signature=tf.RaggedTensorSpec(
+                shape=(None, 4), 
+                dtype=tf.float32
+                ),
+            parallel_iterations=32
+        )
+        return proposals
 
-        # 1. 解码 proposals
-        wa = anchors[:, 2] - anchors[:, 0]
-        ha = anchors[:, 3] - anchors[:, 1]
-        xa = anchors[:, 0] + 0.5 * wa
-        ya = anchors[:, 1] + 0.5 * ha
-        
-        dx = bbox_deltas[:, 0]
-        dy = bbox_deltas[:, 1]
-        dw = bbox_deltas[:, 2]
-        dh = bbox_deltas[:, 3]
+    def generate(self, image_size, anchors, class_logits, bbox_deltas):
+        # decode bbox
+        # a_x, a_y are the center coordinates of the anchors
+        # a_w, a_h are the width and height of the anchors
+        a_w = anchors[:, 2] - anchors[:, 0]
+        a_h = anchors[:, 3] - anchors[:, 1]
+        a_x = anchors[:, 0] + 0.5 * a_w
+        a_y = anchors[:, 1] + 0.5 * a_h
 
-        x = dx * wa + xa
-        y = dy * ha + ya
-        w = tf.exp(dw) * wa
-        h = tf.exp(dh) * ha
+        # t_x, t_y are the offsets to the center coordinates
+        # t_w, t_h are the log-scaled width and height
+        t_x = bbox_deltas[:, 0]
+        t_y = bbox_deltas[:, 1]
+        t_w = bbox_deltas[:, 2]
+        t_h = bbox_deltas[:, 3]
 
-        x1 = x - 0.5 * w
-        y1 = y - 0.5 * h
-        x2 = x + 0.5 * w
-        y2 = y + 0.5 * h
-        proposals = tf.stack([x1, y1, x2, y2], axis=1)
+        # p_x, p_y are the predicted center coordinates
+        # p_w, p_h are the predicted width and height
+        # tf.clip_by_value is used to limit the range of t_w and t_h
+        # to prevent too large or too small boxes
+        p_x = a_x + t_x * a_w
+        p_y = a_y + t_y * a_h
+        p_w = a_w * tf.exp(tf.clip_by_value(t_w, -10.0, 10.0))
+        p_h = a_h * tf.exp(tf.clip_by_value(t_h, -10.0, 10.0))
 
-        # 2. 裁剪到图片边界
-        shape = tf.shape(images)
-        height = tf.cast(shape[1], tf.float32)
-        width = tf.cast(shape[2], tf.float32)
-        
+        # x_1, y_1, x_2, y_2 are the coordinates of the proposals
+        x_1 = p_x - 0.5 * p_w
+        y_1 = p_y - 0.5 * p_h
+        x_2 = p_x + 0.5 * p_w
+        y_2 = p_y + 0.5 * p_h
+        proposals = tf.stack([x_1, y_1, x_2, y_2], axis=1)
+
+        # clip proposals to the image size
+        heights = tf.cast(image_size[0], tf.float32)
+        widths  = tf.cast(image_size[1], tf.float32)
         proposals = tf.stack([
-            tf.clip_by_value(proposals[:, 0], 0, width - 1),
-            tf.clip_by_value(proposals[:, 1], 0, height - 1),
-            tf.clip_by_value(proposals[:, 2], 0, width - 1),
-            tf.clip_by_value(proposals[:, 3], 0, height - 1)
+            tf.clip_by_value(proposals[:, 0], 0, widths - 1),
+            tf.clip_by_value(proposals[:, 1], 0, heights - 1),
+            tf.clip_by_value(proposals[:, 2], 0, widths - 1),
+            tf.clip_by_value(proposals[:, 3], 0, heights - 1)
         ], axis=1)
 
-        # 3. 去除过小的框
+        # remove small boxes
         ws = proposals[:, 2] - proposals[:, 0]
         hs = proposals[:, 3] - proposals[:, 1]
         valid = tf.where((ws >= self.min_size) & (hs >= self.min_size))
         proposals = tf.gather(proposals, valid[:, 0])
-        scores = tf.gather(tf.sigmoid(logits[:, 0]), valid[:, 0])
+        fg_scores = tf.gather(tf.sigmoid(class_logits[:, 0]), valid[:, 0])
+        
+        # get tok-k pre nms proposals
+        top_k = tf.math.top_k(
+            fg_scores, 
+            k=tf.minimum(self.pre_nms_topk, tf.shape(fg_scores)[0])
+        )
+        proposals = tf.gather(proposals, top_k.indices)
+        fg_scores = tf.gather(fg_scores, top_k.indices)
 
-        # 4. 取 top-k
-        topk = tf.math.top_k(
-            scores, 
-            k=tf.minimum(self.pre_nms_topk, tf.shape(scores)[0])
-            )
-        proposals = tf.gather(proposals, topk.indices)
-        scores = tf.gather(scores, topk.indices)
-
-        # 5. NMS
+        # apply non-maximum suppression (NMS)
         keep = tf.image.non_max_suppression(
             proposals, 
-            scores,
+            fg_scores,
             max_output_size=self.post_nms_topk,
             iou_threshold=self.nms_thresh
         )
         proposals = tf.gather(proposals, keep)
+        
+        return tf.RaggedTensor.from_tensor(proposals)
 
-        return proposals

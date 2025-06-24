@@ -7,7 +7,7 @@ from loss import rpn_class_loss_fn, rpn_bbox_loss_fn, \
     roi_class_loss_fn, roi_bbox_loss_fn, roi_mask_loss_fn
 from roi import ROIAlign, ROIClassifierHead, ROIBBoxHead, ROIMaskHead
 from utils import sample_and_assign_targets
-import time
+import os
 
 class MaskRCNN(Model):
     def __init__(self, 
@@ -23,14 +23,11 @@ class MaskRCNN(Model):
             backbone_type
         )
 
-        # strides of p2, p3, p4, p5 are 4, 8, 16, 32 respectively
-        # base_sizes of p2, p3, p4, p5 are 32, 64, 128, 256 respectively
+
         # ratios is height:width
         self.anchor_ratios = [0.5, 1, 2]
         self.anchor_scales = [1.0, 1.5, 2.0]
         self.fpn_feature_size = 256
-        self.fpn_strides = [4, 8, 16, 32]
-        self.fpn_base_sizes = [32, 64, 128, 256]
         
         self.fpn = FPNGenerator(feature_size=self.fpn_feature_size)
 
@@ -44,11 +41,16 @@ class MaskRCNN(Model):
         self.proposal_generator = ProposalGenerator(
             pre_nms_topk=6000,
             post_nms_topk=1000,
-            nms_thresh=0.7,
+            nms_thresh=0.5,
             min_size=16
         )
-
-        self.roi_align = ROIAlign(output_size=7, sampling_ratio=2)
+        
+        self.roi_align = ROIAlign(
+            output_size=7, 
+            sampling_ratio=2,
+            feature_map_strides=self.fpn.strides(),
+            feature_map_size=self.fpn_feature_size
+        )
 
         self.roi_classifier_head = ROIClassifierHead(
             num_classes=80, 
@@ -83,11 +85,12 @@ class MaskRCNN(Model):
             raise ValueError("backbone_type must be 'resnet50' or 'resnet101'")
     
     
-    def call(self, images, origin_sizes, training=False):
-        gpus = tf.config.list_physical_devices('GPU')
-        if gpus:
-            info = tf.config.experimental.get_memory_info('GPU:0')
-            print("Before backbone, GPU memory:", info)
+    def call(self, images, image_sizes, training=False):
+        if os.environ.get("GPU_ENABLE", "FALSE") == "TRUE":
+            gpus = tf.config.list_physical_devices('GPU')
+            if gpus:
+                info = tf.config.experimental.get_memory_info('GPU:0')
+                print("Before backbone, GPU memory:", info)
 
         c2, c3, c4, c5 = self.backbone(images, training=training)
 
@@ -95,46 +98,43 @@ class MaskRCNN(Model):
         
         anchors = self.anchor_generator(
             feature_maps=[p2, p3, p4, p5],
-            strides=self.fpn_strides,
-            base_sizes=self.fpn_base_sizes,
+            strides=self.fpn.strides(),
+            base_sizes=self.fpn.base_sizes(),
             ratios=self.anchor_ratios, 
             scales=self.anchor_scales,
-            origin_sizes=origin_sizes
+            image_sizes=image_sizes
         )
-        # tf.print('anchors shape:', tf.shape(anchors))
 
         rpn_class_logits, rpn_bbox_deltas = self.rpn_head([p2, p3, p4, p5])
-        # tf.print('rpn_class_logits shape:', tf.shape(rpn_class_logits))
-        # tf.print('rpn_bbox_deltas shape:', tf.shape(rpn_bbox_deltas))
         
-        # proposals = self.proposal_generator(
-        #     image, origin_sizes, anchors, rpn_bbox_deltas, rpn_class_logits
-        # )
+        proposals = self.proposal_generator(
+            image_sizes, anchors, rpn_class_logits, rpn_bbox_deltas
+        )
 
-        # proposal_features = self.roi_align(
-        #     [p2, p3, p4, p5], 
-        #     proposals, 
-        #     strides=[4, 8, 16, 32]
-        # )
-        # 
+        features = self.roi_align(
+            feature_maps=[p2, p3, p4, p5], 
+            rois=proposals
+        )
+        
         # roi_class_logits = self.roi_classifier_head(
-        #     proposal_features, 
+        #     features, 
         #     training=training
         # )
         # 
         # roi_bbox_deltas = self.roi_bbox_head(
-        #     proposal_features, 
+        #     features, 
         #     training=training
         # )
         # 
         # roi_masks = self.roi_mask_head(
-        #     proposal_features, 
+        #     features, 
         #     training=training
         # )
 
-        if gpus:
-            info = tf.config.experimental.get_memory_info('GPU:0')
-            print("After backbone, GPU memory:", info)
+        if os.environ.get("GPU_ENABLE", "FALSE") == "TRUE":
+            if gpus:
+                info = tf.config.experimental.get_memory_info('GPU:0')
+                print("After backbone, GPU memory:", info)
 
         # return (
         #     rpn_class_logits, 
