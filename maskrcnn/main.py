@@ -14,7 +14,7 @@ import itertools
 import random
 from tensorflow.keras import mixed_precision
 
-os.environ["GPU_ENABLE"] = "TRUE"
+os.environ["GPU_ENABLE"] = "FALSE"
 
 if os.environ.get("GPU_ENABLE", "FALSE") == "FALSE":
     tf.config.set_visible_devices([], 'GPU')

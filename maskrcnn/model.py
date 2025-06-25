@@ -48,8 +48,8 @@ class MaskRCNN(Model):
         self.roi_align = ROIAlign(
             output_size=7, 
             sampling_ratio=2,
-            feature_map_strides=self.fpn.strides(),
-            feature_map_size=self.fpn_feature_size
+            feature_strides=self.fpn.strides(),
+            feature_size=self.fpn_feature_size
         )
 
         self.roi_classifier_head = ROIClassifierHead(
@@ -115,6 +115,7 @@ class MaskRCNN(Model):
             feature_maps=[p2, p3, p4, p5], 
             rois=proposals
         )
+        tf.print('features shape:', tf.shape(features))
         
         # roi_class_logits = self.roi_classifier_head(
         #     features, 
