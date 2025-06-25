@@ -102,7 +102,7 @@ class ROIAlign(layers.Layer):
                     dtype=tf.float32),
                     tf.zeros([0], dtype=tf.int32)
             )
-
+            
             features, indices = tf.cond(
                 tf.shape(rois_in_level)[0] > 0,
                 nonempty_branch,

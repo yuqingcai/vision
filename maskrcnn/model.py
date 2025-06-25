@@ -22,8 +22,7 @@ class MaskRCNN(Model):
             batch_size, 
             backbone_type
         )
-
-
+        
         # ratios is height:width
         self.anchor_ratios = [0.5, 1, 2]
         self.anchor_scales = [1.0, 1.5, 2.0]
@@ -115,7 +114,7 @@ class MaskRCNN(Model):
             feature_maps=[p2, p3, p4, p5], 
             rois=proposals
         )
-        tf.print('features shape:', tf.shape(features))
+        # tf.print('features shape:', tf.shape(features))
         
         # roi_class_logits = self.roi_classifier_head(
         #     features, 
