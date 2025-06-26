@@ -16,7 +16,7 @@ class AnchorGenerator(layers.Layer):
         
         ratios = tf.constant(ratios, dtype=tf.float32)
         scales = tf.constant(scales, dtype=tf.float32)
-
+        
         # tf.print('origin_sizes shape:', tf.shape(origin_sizes))
         
         if len(feature_maps) != len(strides) or \

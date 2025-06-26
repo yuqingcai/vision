@@ -19,9 +19,12 @@ os.environ["GPU_ENABLE"] = "FALSE"
 if os.environ.get("GPU_ENABLE", "FALSE") == "FALSE":
     tf.config.set_visible_devices([], 'GPU')
 
-# gpus = tf.config.experimental.list_physical_devices('GPU')
-# for gpu in gpus:
-#     tf.config.experimental.set_memory_growth(gpu, True)
+
+if os.environ.get("GPU_ENABLE", "FALSE") == "TRUE":
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    for gpu in gpus:
+        tf.config.experimental.set_memory_growth(gpu, True)
+
 # mixed_precision.set_global_policy('mixed_float16')
 
 coco_root = '../../dataset/coco2017/'
@@ -29,7 +32,7 @@ train_img_dir = os.path.join(coco_root, 'train2017')
 ann_file = os.path.join(coco_root, 'annotations/instances_train2017.json')
 
 if __name__ == '__main__':
-    batch_size = 10
+    batch_size = 4
     ds_train = create_dataset(
         ann_file=ann_file,
         img_dir=train_img_dir,
