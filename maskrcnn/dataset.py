@@ -68,9 +68,9 @@ def load_image_info(coco, img_ids, img_dir):
         entries.append({
             'file_path' : file_path, 
             'size' :  (height, width), 
-            'bboxes' : bboxes,
-            'category_ids' : category_ids,
-            'rles' : rles, 
+            'bbox' : bboxes,
+            'category_id' : category_ids,
+            'rle' : rles, 
         })
 
     time_1 = time.time()
@@ -244,16 +244,16 @@ def generator(entries):
                 entry['size'], 
                 dtype=tf.int32
             ),
-            'bboxes': tf.ragged.constant(
-                entry['bboxes'], 
+            'bbox': tf.ragged.constant(
+                entry['bbox'], 
                 dtype=tf.float32
             ),
-            'category_ids': tf.constant(
-                entry['category_ids'], 
+            'category_id': tf.constant(
+                entry['category_id'], 
                 dtype=tf.int32
             ),
-            'rles': tf.constant(
-                entry['rles'], 
+            'rle': tf.constant(
+                entry['rle'], 
                 dtype=tf.string
             ),
         }
@@ -294,7 +294,7 @@ def preprocess(batch):
 
     bboxes_resized = tf.map_fn(
         lambda args: resize_bboxes(args[0], args[1]), 
-        (batch['bboxes'], scales),
+        (batch['bbox'], scales),
         fn_output_signature=tf.RaggedTensorSpec(
             shape=(None, 4), 
             dtype=tf.float32
@@ -303,7 +303,7 @@ def preprocess(batch):
     
     masks = tf.map_fn(
         lambda args: create_masks(args[0], args[1]),
-        (batch['rles'], scales),
+        (batch['rle'], scales),
         fn_output_signature=tf.RaggedTensorSpec(
             shape=(None, None, None), 
             dtype=tf.uint8
@@ -312,9 +312,8 @@ def preprocess(batch):
 
     batch['image'] = images
     batch['size'] = resizes
-    batch['bboxes'] = bboxes_resized
-    batch['masks'] = masks
-    # batch['origin_size'] = batch['size']
+    batch['bbox'] = bboxes_resized
+    batch['mask'] = masks
     
     return batch
 
@@ -337,17 +336,17 @@ def create_dataset(ann_file, img_dir, batch_size=4, shuffle=False):
                 dtype=tf.int32
             ), 
 
-            'bboxes': tf.RaggedTensorSpec(
+            'bbox': tf.RaggedTensorSpec(
                 shape=(None, 4), 
                 dtype=tf.float32
             ),
 
-            'category_ids': tf.TensorSpec(
+            'category_id': tf.TensorSpec(
                 shape=(None,), 
                 dtype=tf.int32
             ),
 
-            'rles': tf.TensorSpec(
+            'rle': tf.TensorSpec(
                 shape=(None,), 
                 dtype=tf.string
             ),
