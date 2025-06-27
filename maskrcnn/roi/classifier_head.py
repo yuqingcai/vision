@@ -11,8 +11,7 @@ class ROIClassifierHead(layers.Layer):
     
     def call(self, inputs):
         """
-        inputs shape: [batch, (N), sample_size, sample_size, feature_size], 
-                       it's a RaggedTensor
+        inputs shape: [batch, (N), sample_size, sample_size, feature_size], it's a RaggedTensor
         """
         class_logits = tf.map_fn(
             self.forward, 

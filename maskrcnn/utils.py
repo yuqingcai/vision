@@ -85,6 +85,7 @@ def sample_and_assign_targets(
 
     return roi_boxes, roi_labels, roi_bbox_targets, roi_mask_targets
 
+
 def compute_iou(boxes1, boxes2):
     """
     boxes1: (N, 4), boxes2: (M, 4)
@@ -103,6 +104,7 @@ def compute_iou(boxes1, boxes2):
     area2 = (boxes2[..., 2] - boxes2[..., 0]) * (boxes2[..., 3] - boxes2[..., 1])
     union = area1 + area2 - intersection
     return intersection / (union + 1e-8)
+
 
 def encode_boxes(proposals, gt_boxes):
     """

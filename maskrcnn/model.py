@@ -91,6 +91,14 @@ class MaskRCNN(Model):
     
     
     def call(self, images, image_sizes, training=False):
+        """
+        rois shape: [B, (None), 4]
+        features_class shape: [B, (None), 7, 7, 256]
+        class_logits shape: [B, (None), 81]
+        bbox_deltas shape: [B, (None), 81*4]
+        features_mask shape: [B, (None), 14, 14, 256]
+        masks shape: [B, (None), 28, 28, 80]
+        """
         if os.environ.get("GPU_ENABLE", "FALSE") == "TRUE":
             gpus = tf.config.list_physical_devices('GPU')
             if gpus:
@@ -101,7 +109,7 @@ class MaskRCNN(Model):
         
         p2, p3, p4, p5 = self.fpn([c2, c3, c4, c5])
         
-        anchors = self.anchor_generator(
+        anchors, batch_indices = self.anchor_generator(
             feature_maps=[p2, p3, p4, p5],
             strides=self.fpn.strides(),
             base_sizes=self.fpn.base_sizes(),
@@ -109,47 +117,46 @@ class MaskRCNN(Model):
             scales=self.anchor_scales,
             image_sizes=image_sizes
         )
-
-        rpn_class_logits, rpn_bbox_deltas = self.rpn_head([p2, p3, p4, p5])
         
-        proposals = self.proposal_generator(
-            image_sizes, anchors, rpn_class_logits, rpn_bbox_deltas
-        )
-
-        # rois shape: [B, (None), 4]
-        # features_class shape: [B, (None), sample_size, sample_size, feature_size]
-        features_class = self.roi_align_class(
-            feature_maps=[p2, p3, p4, p5], 
-            rois=proposals
-        )
-        tf.print('features shape:', tf.shape(features_class))
-
-        # class_logits shape: [B, (None), 81]
-        class_logits = self.roi_classifier_head(
-            features_class,   
-            training=training
-        )
-        tf.print('class_logits shape:', tf.shape(class_logits))
+        # rpn_class_logits, rpn_bbox_deltas = self.rpn_head([p2, p3, p4, p5])
         
-        # bbox_deltas shape: [B, (None), 81*4]
-        bbox_deltas = self.roi_bbox_head(
-            features_class, 
-            training=training
-        )
-        tf.print('bbox_deltas shape:', tf.shape(bbox_deltas))
+        # proposals = self.proposal_generator(
+        #     image_sizes, anchors, rpn_class_logits, rpn_bbox_deltas
+        # )
+        proposals = 0.0
+        class_logits = 0.0
+        bbox_deltas = 0.0
+        masks = 0.0
+        
+        # features_class = self.roi_align_class(
+        #     feature_maps=[p2, p3, p4, p5], 
+        #     rois=proposals
+        # )
 
-        # rois shape: [B, (None), 4]
-        # features_mask shape: [B, (None), sample_size, sample_size, feature_size]
-        features_mask = self.roi_align_mask(
-            feature_maps=[p2, p3, p4, p5], 
-            rois=proposals
-        )
-        # masks shape: [B, (None), 28, 28, 80]
-        masks = self.roi_mask_head(
-            features_mask, 
-            training=training
-        )
-        tf.print('masks shape:', tf.shape(masks))
+        # class_logits = self.roi_classifier_head(
+        #     features_class,   
+        #     training=training
+        # )
+        
+        # bbox_deltas = self.roi_bbox_head(
+        #     features_class, 
+        #     training=training
+        # )
+        
+        # features_mask = self.roi_align_mask(
+        #     feature_maps=[p2, p3, p4, p5], 
+        #     rois=proposals
+        # )
+
+        # masks = self.roi_mask_head(
+        #     features_mask, 
+        #     training=training
+        # )
+
+        # tf.print('features shape:', tf.shape(features_class))
+        # tf.print('class_logits shape:', tf.shape(class_logits))
+        # tf.print('bbox_deltas shape:', tf.shape(bbox_deltas))
+        # tf.print('masks shape:', tf.shape(masks))
 
         if os.environ.get("GPU_ENABLE", "FALSE") == "TRUE":
             if gpus:
@@ -163,6 +170,8 @@ class MaskRCNN(Model):
             masks
         )
 
+
+
     def compile(self, optimizer):
         super().compile()
         self.optimizer = optimizer
@@ -173,42 +182,27 @@ class MaskRCNN(Model):
         sizes = batch['size']
         gt_bboxes = batch['bbox']
         gt_masks = batch['mask']
-        gt_classes = batch['category_id']
-
-        # tf.print('gt_bboxes shape:', tf.shape(gt_bboxes))
-        # tf.print('gt_masks shape:', tf.shape(gt_masks))
-        # tf.print('gt_classes shape:', tf.shape(gt_classes))
+        gt_class_ids = batch['category_id']
 
         with tf.GradientTape() as tape:
-
+            
             proposals, class_logits, bbox_deltas, masks = \
                 self.call(images, sizes, training=True)
             
-            # bboxes, labels, bbox_targets, mask_targets = \
-            #     sample_and_assign_targets(
-            #         proposals, 
-            #         gt_boxes, 
-            #         gt_classes, 
-            #         gt_masks)
-            # 
-            # class_loss = class_loss_fn(class_logits, labels)
-            # 
-            # bbox_loss = bbox_loss_fn(
-            #     bbox_deltas, 
-            #     bbox_targets, 
-            #     labels
-            # )
-            # 
-            # mask_loss = mask_loss_fn(
-            #     masks, 
-            #     mask_targets, 
-            #     labels
-            # )
+        #     class_loss = class_loss_fn(
+        #         proposals, class_logits, gt_class_ids, gt_bboxes)
+            
+        #     bbox_loss = bbox_loss_fn(
+        #         proposals, bbox_deltas, gt_bboxes
+        #     )
+            
+        #     mask_loss = mask_loss_fn(
+        #         proposals,
+        #         masks, 
+        #         gt_masks
+        #     )
 
-            # total_loss = class_loss + bbox_loss + mask_loss
-        
-        # grads = tape.gradient(total_loss, self.trainable_variables)
-        # self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+        #     total_loss = class_loss + bbox_loss + mask_loss
 
         # self.class_loss_tracker.update_state(class_loss)
         # self.bbox_loss_tracker.update_state(bbox_loss)
@@ -221,11 +215,12 @@ class MaskRCNN(Model):
         #     'mask_loss': self.mask_loss_tracker.result(),
         #     'total_loss': self.total_loss_tracker.result(),
         # }
-        return {
+
+        return {       
             'class_loss': 0.0,
             'bbox_loss': 0.0,
             'mask_loss': 0.0,
-            'total_loss': 0.0,
+            'total_loss': 0.0
         }
         
     def reset_metrics(self):

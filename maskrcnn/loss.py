@@ -1,26 +1,13 @@
 import tensorflow as tf
 
-def class_loss_fn(class_logits, class_labels):
-    indices = tf.where(class_labels >= 0)
-    logits = tf.gather_nd(class_logits, indices)
-    labels = tf.gather_nd(class_labels, indices)
-    return tf.reduce_mean(
-        tf.keras.losses.sparse_categorical_crossentropy(
-            labels, logits, from_logits=True)
-        )
+def class_loss_fn(proposals, class_logits, gt_class_ids, gt_bboxes):
+    """
+    将 proposals 和 gt_bboxes 进行IoU计算，找到与每个 proposal 匹配的 ground truth，将与ground truth 匹配的 gt_class_id 赋值给该 proposal，并把 proposal 的 class_logits（预期值）和 gt_class_id（实际值）进行比较，计算损失。
+    """
+    return 0.0
 
-def bbox_loss_fn(bbox_deltas, bbox_targets, class_labels):
-    indices = tf.where(class_labels >= 0)
-    deltas = tf.gather_nd(bbox_deltas, indices)
-    targets = tf.gather_nd(bbox_targets, indices)
-    return tf.reduce_mean(tf.keras.losses.Huber()(targets, deltas))
+def bbox_loss_fn(proposals, bbox_deltas, gt_bboxes):
+    return 0.0
 
-
-def mask_loss_fn(masks, mask_targets, class_labels):
-    indices = tf.where(class_labels >= 0)
-    masks = tf.gather_nd(masks, indices)
-    targets = tf.gather_nd(mask_targets, indices)
-    return tf.reduce_mean(
-        tf.keras.losses.binary_crossentropy(
-            targets, masks, from_logits=True)
-        )
+def mask_loss_fn(proposals, masks, gt_masks):
+    return 0.0
