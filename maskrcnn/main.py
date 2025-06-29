@@ -43,7 +43,7 @@ if __name__ == '__main__':
     model = MaskRCNN(
         input_shape=(None, None, 3),
         batch_size=batch_size,
-        backbone_type='resnet101'
+        backbone_type='resnet50'
     )
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
@@ -59,11 +59,13 @@ if __name__ == '__main__':
             d0 = time.time() - t_0
             d1 = time.time() - t_1
             print(f'epoch {epoch}, step {step}, '
-                  f'class_loss: {loss["class_loss"]:.4f}, '
-                  f'bbox_loss: {loss["bbox_loss"]:.4f}, '
-                  f'mask_loss: {loss["mask_loss"]:.4f}, '
-                  f'total_loss: {loss["total_loss"]:.4f}, '
-                  f'setp_duration: {d1:.2f}s, '
-                  f'total_duration: {d0:.2f}s'
+                  f'loss_objectness: {loss["loss_objectness"]:.4f}, '
+                  f'loss_rpn_box_reg: {loss["loss_rpn_box_reg"]:.4f}, '
+                  f'loss_class: {loss["loss_class"]:.4f}, '
+                  f'loss_box_reg: {loss["loss_box_reg"]:.4f}, '
+                  f'loss_mask: {loss["loss_mask"]:.4f}, '
+                  f'loss_total: {loss["loss_total"]:.4f}, '
+                  f'setp_t: {d1:.2f}s, '
+                  f'total_t: {d0:.2f}s'
             )
         model.reset_metrics()

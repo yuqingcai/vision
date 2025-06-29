@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import layers
+from utils import sync_flatten_batch
 
 
 class AnchorGenerator(layers.Layer):
@@ -51,9 +52,6 @@ class AnchorGenerator(layers.Layer):
             [ tf.reshape(a, [-1, 4]) for a in anchors ], axis=0
         )
         batch_indices = tf.concat(batch_indices, axis=0)
-        
-        tf.print('anchors_flatten shape:', tf.shape(anchors_flatten))
-        tf.print('batch_indices shape:', tf.shape(batch_indices))
 
         return anchors_flatten, batch_indices
     
@@ -121,8 +119,6 @@ class RPNHead(layers.Layer):
     def __init__(self, anchors_per_location, feature_size, **kwargs):
         super().__init__(**kwargs)
 
-        tf.print('anchors_per_location:', anchors_per_location)
-
         self.conv = layers.Conv2D(feature_size, 
                                   3, 
                                   padding="same", 
@@ -131,29 +127,45 @@ class RPNHead(layers.Layer):
         self.bbox_deltas = layers.Conv2D(anchors_per_location * 4, 1)
     
     def call(self, feature_maps):
-        class_logits_all = []
-        bbox_deltas_all = []
+        class_logits = []
+        bbox_deltas = []
 
         for feature_map in feature_maps:
             x = self.conv(feature_map)
-            class_logits = self.class_logits(x)
-            bbox_deltas = self.bbox_deltas(x)
+            class_logits_feature_map = self.class_logits(x)
+            bbox_deltas_feature_map = self.bbox_deltas(x)
 
-            class_logits = tf.reshape(
-                class_logits, 
-                [tf.shape(class_logits)[0], -1, 1])
+            shape_class_logits_feature_map = tf.shape(class_logits_feature_map)
+            shape_bbox_deltas_feature_map = tf.shape(bbox_deltas_feature_map)
+
+            # reshape class_logits_feature_map from 
+            # [B, H, W, anchors_per_location] to [B, N, 1]
+            class_logits_feature_map = tf.reshape(
+                class_logits_feature_map, 
+                [ tf.shape(class_logits_feature_map)[0], -1, 1]
+            )
             
-            bbox_deltas = tf.reshape(
-                bbox_deltas, 
-                [tf.shape(bbox_deltas)[0], -1, 4])
-            
-            class_logits_all.append(class_logits)
-            bbox_deltas_all.append(bbox_deltas)
+            # reshape bbox_deltas_feature_map from 
+            # [B, H, W, anchors_per_location * 4] to [B, N, 4]
+            bbox_deltas_feature_map = tf.reshape(
+                bbox_deltas_feature_map, 
+                [ tf.shape(bbox_deltas_feature_map)[0], -1, 4]
+            )
 
-        class_logits_all = tf.concat(class_logits_all, axis=1)
-        bbox_deltas_all = tf.concat(bbox_deltas_all, axis=1)
+            class_logits.append(class_logits_feature_map)
+            bbox_deltas.append(bbox_deltas_feature_map)
 
-        return class_logits_all, bbox_deltas_all
+        # flatten class_logits and bbox_deltas
+        # class_logits_flatten shape [B, N, 1] -> [B*N, 1]
+        # bbox_deltas_flatten shape [B, N, 4] -> [B*N, 4]
+        class_logits_flatten = tf.concat(
+            [ tf.reshape(a, [-1, 1]) for a in class_logits ], axis=0
+        )
+        bbox_deltas_flatten = tf.concat(
+            [ tf.reshape(a, [-1, 4]) for a in bbox_deltas ], axis=0
+        )
+        
+        return class_logits_flatten, bbox_deltas_flatten
 
 
 class ProposalGenerator(layers.Layer):
@@ -164,22 +176,12 @@ class ProposalGenerator(layers.Layer):
         self.post_nms_topk = post_nms_topk
         self.nms_thresh = nms_thresh
         self.min_size = min_size
+    
+    def call(self, batch_indices, image_sizes, anchors,  
+             class_logits, bbox_deltas):
         
-    def call(self, image_sizes, anchors, class_logits, bbox_deltas):
-        proposals = tf.map_fn(
-            lambda args: self.generate(
-                args[0], args[1], args[2], args[3],
-            ),
-            elems=(image_sizes, anchors, class_logits, bbox_deltas),
-            fn_output_signature=tf.RaggedTensorSpec(
-                shape=(None, 4), 
-                dtype=tf.float32
-                ),
-            parallel_iterations=32
-        )
-        return proposals
+        image_sizes = tf.gather(image_sizes, batch_indices)
 
-    def generate(self, image_size, anchors, class_logits, bbox_deltas):
         # decode bbox
         # a_x, a_y are the center coordinates of the anchors
         # a_w, a_h are the width and height of the anchors
@@ -212,28 +214,44 @@ class ProposalGenerator(layers.Layer):
         proposals = tf.stack([x_1, y_1, x_2, y_2], axis=1)
 
         # clip proposals to the image size
-        heights = tf.cast(image_size[0], tf.float32)
-        widths  = tf.cast(image_size[1], tf.float32)
+        heights = tf.cast(image_sizes[:, 0], tf.float32)
+        widths  = tf.cast(image_sizes[:, 1], tf.float32)
         proposals = tf.stack([
             tf.clip_by_value(proposals[:, 0], 0, widths - 1),
             tf.clip_by_value(proposals[:, 1], 0, heights - 1),
             tf.clip_by_value(proposals[:, 2], 0, widths - 1),
             tf.clip_by_value(proposals[:, 3], 0, heights - 1)
         ], axis=1)
+        
+        tf.print('proposals shape:', tf.shape(proposals))
 
         # remove small boxes
         ws = proposals[:, 2] - proposals[:, 0]
         hs = proposals[:, 3] - proposals[:, 1]
         valid = tf.where((ws >= self.min_size) & (hs >= self.min_size))
-        proposals = tf.gather(proposals, valid[:, 0])
+
+        # update proposals and batch_indices
+        proposals, batch_indices = sync_flatten_batch(
+            proposals, 
+            batch_indices, 
+            valid[:, 0]
+        )
+
         fg_scores = tf.gather(tf.sigmoid(class_logits[:, 0]), valid[:, 0])
-        
+
         # get tok-k pre nms proposals
         top_k = tf.math.top_k(
             fg_scores, 
             k=tf.minimum(self.pre_nms_topk, tf.shape(fg_scores)[0])
         )
-        proposals = tf.gather(proposals, top_k.indices)
+        
+        # update proposals and batch_indices
+        proposals, batch_indices = sync_flatten_batch(
+            proposals, 
+            batch_indices, 
+            top_k.indices
+        )
+
         fg_scores = tf.gather(fg_scores, top_k.indices)
 
         # apply non-maximum suppression (NMS)
@@ -243,7 +261,15 @@ class ProposalGenerator(layers.Layer):
             max_output_size=self.post_nms_topk,
             iou_threshold=self.nms_thresh
         )
-        proposals = tf.gather(proposals, keep)
+        # update proposals and batch_indices
+        proposals, batch_indices = sync_flatten_batch(
+            proposals, 
+            batch_indices, 
+            keep
+        )
         
-        return tf.RaggedTensor.from_tensor(proposals)
-
+        tf.print('tok-k proposals shape:', tf.shape(proposals))
+        tf.print('tok-k batch_indices shape:', tf.shape(batch_indices))
+        
+        # add batch indices to proposals
+        return proposals, batch_indices
