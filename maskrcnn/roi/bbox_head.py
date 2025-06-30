@@ -9,33 +9,18 @@ class ROIBBoxHead(layers.Layer):
         self.fc2 = layers.Dense(hidden_dim, activation='relu')
         self.bbox_pred = layers.Dense(num_classes * 4)
 
-    def call(self, inputs):
+    def call(self, features):
         """
-        inputs shape: [batch, (N), sample_size, sample_size, feature_size], 
-                       it's a RaggedTensor
+            features shape: [N, sample_size, sample_size, feature_size]
         """
-        bbox_deltas = tf.map_fn(
-            self.forward, 
-            inputs, 
-            fn_output_signature=tf.RaggedTensorSpec(
-                shape=[ None, self.num_classes * 4 ], 
-                dtype=tf.float32
-            )
-        )
-        return bbox_deltas
-    
-    def forward(self, x):
-        """
-        x shape: [ N, sample_size, sample_size, feature_size ], 
-        bbox_deltas shape: [ N, num_classes*4 ]
-        """
-        x_shape = tf.shape(x)
-        feature_dim = x_shape[1] * x_shape[2] * x_shape[3]
-        
-        # flatten x to shape [ N, feature_dim ]
-        x = tf.reshape(x, [ -1,  feature_dim ])
-
+        shape = tf.shape(features)
+        feature_dim = shape[1] * shape[2] * shape[3]
+        # flatten features to shape [ N, feature_dim ]
+        x = tf.reshape(features, [ -1,  feature_dim ])
         x = self.fc1(x)
         x = self.fc2(x)
         bbox_deltas = self.bbox_pred(x)
-        return tf.RaggedTensor.from_tensor(bbox_deltas)
+        
+        tf.print('bbox_deltas shape:', tf.shape(bbox_deltas))
+        return bbox_deltas
+    

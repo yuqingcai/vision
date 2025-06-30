@@ -123,20 +123,21 @@ class MaskRCNN(Model):
         
         rpn_class_logits, rpn_bbox_deltas = self.rpn_head([p2, p3, p4, p5])
 
-        proposals, batch_indices = self.proposal_generator(
-            batch_indices, image_sizes, anchors, rpn_class_logits, 
-            rpn_bbox_deltas
-        )
+        proposals, batch_indices, rpn_class_logits, rpn_bbox_deltas = \
+            self.proposal_generator(
+                anchors, batch_indices, image_sizes, rpn_class_logits, 
+                rpn_bbox_deltas
+            )
         
-        features_class, batch_indices = self.roi_align_class(
+        # roi class and bbox head
+        features_class, feature_batch_indices = self.roi_align_class(
             feature_maps=[p2, p3, p4, p5], 
             rois=proposals,
             batch_indices=batch_indices
         )
-        
         class_logits = 0.0
         # class_logits = self.roi_classifier_head(
-        #     features_class,   
+        #     features_class, 
         #     training=training
         # )
         
@@ -146,18 +147,17 @@ class MaskRCNN(Model):
         #     training=training
         # )
         
-        # features_mask, batch_indices = self.roi_align_mask(
+        # # roi mask head
+        # features_mask, _ = self.roi_align_mask(
         #     feature_maps=[p2, p3, p4, p5], 
         #     rois=proposals,
         #     batch_indices=batch_indices
         # )
-
         masks = 0.0
         # masks = self.roi_mask_head(
         #     features_mask, 
         #     training=training
         # )
-
 
         if os.environ.get("GPU_ENABLE", "FALSE") == "TRUE":
             if gpus:
@@ -170,10 +170,9 @@ class MaskRCNN(Model):
             rpn_bbox_deltas,
             class_logits, 
             bbox_deltas, 
-            masks
+            masks,
+            feature_batch_indices
         )
-
-
 
     def compile(self, optimizer):
         super().compile()
@@ -188,9 +187,8 @@ class MaskRCNN(Model):
         gt_class_ids = batch['category_id']
 
         with tf.GradientTape() as tape:
-            
-            proposals, rpn_class_logits, rpn_box_deltas, \
-                class_logits, bbox_deltas, masks = \
+            rois, rpn_class_logits, rpn_box_deltas, \
+                class_logits, bbox_deltas, masks, batch_indices = \
                     self.call(images, sizes, training=True)
 
             # loss_objectness = loss_objectness_fn()
@@ -210,7 +208,7 @@ class MaskRCNN(Model):
             loss_objectness = tf.reduce_mean(tf.square(rpn_class_logits))
             loss_rpn_box_reg = tf.reduce_mean(tf.square(rpn_box_deltas))
             loss_class = tf.reduce_mean(tf.square(rpn_class_logits))
-            loss_box_reg = tf.reduce_mean(tf.square(rpn_box_deltas))
+            loss_box_reg = tf.reduce_mean(tf.square(rpn_class_logits))
             loss_mask = tf.reduce_mean(tf.square(rpn_class_logits))
 
             loss_total = loss_objectness + loss_rpn_box_reg + \
@@ -236,7 +234,6 @@ class MaskRCNN(Model):
             'loss_total': self.loss_total_tracker.result(),
         }
 
-        
     def reset_metrics(self):
         self.loss_objectness_tracker.reset_states()
         self.loss_rpn_box_reg_tracker.reset_states()

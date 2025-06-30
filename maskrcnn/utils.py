@@ -1,11 +1,5 @@
 import tensorflow as tf
 
-def sync_flatten_batch(features, batch_indices, indices):
-    features = tf.gather(features, indices)
-    batch_indices = tf.gather(batch_indices, indices)
-    return features, batch_indices
-
-
 def sample_and_assign_targets(
     proposals,
     gt_boxes,

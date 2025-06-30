@@ -170,207 +170,143 @@
     #     return wa * Ia + wb * Ib + wc * Ic + wd * Id
 
 
-# feature_dim = sample_size * sample_size * feature_size
-# flatten to [B, (N), feature_dim]
-features_shape = tf.shape(features)
-flatten_features = tf.reshape(
-    features, 
-    [ features_shape[0], features_shape[1],  -1 ]
-)
-tf.print('flatten_features shape:', tf.shape(flatten_features))
 
 
-
-def generate(self, image_size, anchors, class_logits, bbox_deltas):
-    # decode bbox
-    # a_x, a_y are the center coordinates of the anchors
-    # a_w, a_h are the width and height of the anchors
-    a_w = anchors[:, 2] - anchors[:, 0]
-    a_h = anchors[:, 3] - anchors[:, 1]
-    a_x = anchors[:, 0] + 0.5 * a_w
-    a_y = anchors[:, 1] + 0.5 * a_h
-
-    # t_x, t_y are the offsets to the center coordinates
-    # t_w, t_h are the log-scaled width and height
-    t_x = bbox_deltas[:, 0]
-    t_y = bbox_deltas[:, 1]
-    t_w = bbox_deltas[:, 2]
-    t_h = bbox_deltas[:, 3]
-
-    # p_x, p_y are the predicted center coordinates
-    # p_w, p_h are the predicted width and height
-    # tf.clip_by_value is used to limit the range of t_w and t_h
-    # to prevent too large or too small boxes
-    p_x = a_x + t_x * a_w
-    p_y = a_y + t_y * a_h
-    p_w = a_w * tf.exp(tf.clip_by_value(t_w, -10.0, 10.0))
-    p_h = a_h * tf.exp(tf.clip_by_value(t_h, -10.0, 10.0))
-
-    # x_1, y_1, x_2, y_2 are the coordinates of the proposals
-    x_1 = p_x - 0.5 * p_w
-    y_1 = p_y - 0.5 * p_h
-    x_2 = p_x + 0.5 * p_w
-    y_2 = p_y + 0.5 * p_h
-    proposals = tf.stack([x_1, y_1, x_2, y_2], axis=1)
-
-    # clip proposals to the image size
-    heights = tf.cast(image_size[0], tf.float32)
-    widths  = tf.cast(image_size[1], tf.float32)
-    proposals = tf.stack([
-        tf.clip_by_value(proposals[:, 0], 0, widths - 1),
-        tf.clip_by_value(proposals[:, 1], 0, heights - 1),
-        tf.clip_by_value(proposals[:, 2], 0, widths - 1),
-        tf.clip_by_value(proposals[:, 3], 0, heights - 1)
-    ], axis=1)
-
-    # remove small boxes
-    ws = proposals[:, 2] - proposals[:, 0]
-    hs = proposals[:, 3] - proposals[:, 1]
-    valid = tf.where((ws >= self.min_size) & (hs >= self.min_size))
-    proposals = tf.gather(proposals, valid[:, 0])
-    fg_scores = tf.gather(tf.sigmoid(class_logits[:, 0]), valid[:, 0])
-    
-    # get tok-k pre nms proposals
-    top_k = tf.math.top_k(
-        fg_scores, 
-        k=tf.minimum(self.pre_nms_topk, tf.shape(fg_scores)[0])
-    )
-    proposals = tf.gather(proposals, top_k.indices)
-    fg_scores = tf.gather(fg_scores, top_k.indices)
-
-    # apply non-maximum suppression (NMS)
-    keep = tf.image.non_max_suppression(
-        proposals, 
-        fg_scores,
-        max_output_size=self.post_nms_topk,
-        iou_threshold=self.nms_thresh
-    )
-    proposals = tf.gather(proposals, keep)
-    
-    return tf.RaggedTensor.from_tensor(proposals)
-
-
-
-class ROIAlign(layers.Layer):
-    def __init__(self, output_size, sampling_ratio, 
-                 feature_strides, feature_size, **kwargs):
+class ProposalGenerator(layers.Layer):
+    def __init__(self, pre_nms_topk=6000, post_nms_topk=1000, 
+                 nms_thresh=0.7, min_size=16, **kwargs):
         super().__init__(**kwargs)
-        self.output_size = output_size
-        self.sampling_ratio = sampling_ratio
-        self.feature_strides = feature_strides
-        self.feature_size = feature_size
-
-    def call(self, feature_maps, rois, batch_indices):
-        features = tf.map_fn(
-            lambda args: self.batch_features(args[0], args[1]),
-            elems=(feature_maps, rois),
-            fn_output_signature=tf.RaggedTensorSpec(
-                shape=[
-                    None, 
-                    self.output_size,
-                    self.output_size,
-                    self.feature_size
-                ],
-                dtype=tf.float32,
-                ragged_rank=1
-            ),
-            parallel_iterations=32
-        )
-        return features
+        self.pre_nms_topk = pre_nms_topk
+        self.post_nms_topk = post_nms_topk
+        self.nms_thresh = nms_thresh
+        self.min_size = min_size
     
-    def batch_features(self, feature_maps, rois):
-        if isinstance(rois, tf.RaggedTensor):
-            rois = rois.to_tensor()
+    def call(self, anchors, batch_indices, image_sizes,   
+             class_logits, bbox_deltas):
+            
+        image_sizes = tf.gather(image_sizes, batch_indices)
+        batch_size = tf.reduce_max(batch_indices) + 1
+
+        def topk_per_image(index):
+            mask = tf.equal(batch_indices, index)
+            selected = tf.where(mask)[:, 0]
+            anchors_selected = tf.gather(anchors, selected)
+            class_logits_selected = tf.gather(class_logits, selected)
+            bbox_deltas_selected = tf.gather(bbox_deltas, selected)
+            image_sizes_selected = tf.gather(image_sizes, selected)
+
+            # decode bbox
+            # a_x, a_y are the center coordinates of the anchors
+            # a_w, a_h are the width and height of the anchors
+            a_w = anchors_selected[:, 2] - anchors_selected[:, 0]
+            a_h = anchors_selected[:, 3] - anchors_selected[:, 1]
+            a_x = anchors_selected[:, 0] + 0.5 * a_w
+            a_y = anchors_selected[:, 1] + 0.5 * a_h
+
+            # t_x, t_y are the offsets to the center coordinates
+            # t_w, t_h are the log-scaled width and height
+            t_x = bbox_deltas_selected[:, 0]
+            t_y = bbox_deltas_selected[:, 1]
+            t_w = bbox_deltas_selected[:, 2]
+            t_h = bbox_deltas_selected[:, 3]
+
+            # p_x, p_y are the predicted center coordinates
+            # p_w, p_h are the predicted width and height
+            # tf.clip_by_value is used to limit the range of t_w and t_h
+            # to prevent too large or too small boxes
+            p_x = a_x + t_x * a_w
+            p_y = a_y + t_y * a_h
+            p_w = a_w * tf.exp(tf.clip_by_value(t_w, -10.0, 10.0))
+            p_h = a_h * tf.exp(tf.clip_by_value(t_h, -10.0, 10.0))
+
+            # x_1, y_1, x_2, y_2 are the coordinates of the proposals
+            x_1 = p_x - 0.5 * p_w
+            y_1 = p_y - 0.5 * p_h
+            x_2 = p_x + 0.5 * p_w
+            y_2 = p_y + 0.5 * p_h
+            proposals = tf.stack([x_1, y_1, x_2, y_2], axis=1)
+
+            # clip proposals to the image size
+            heights = tf.cast(image_sizes_selected[:, 0], tf.float32)
+            widths  = tf.cast(image_sizes_selected[:, 1], tf.float32)
+            proposals = tf.stack([
+                tf.clip_by_value(proposals[:, 0], 0, widths - 1),
+                tf.clip_by_value(proposals[:, 1], 0, heights - 1),
+                tf.clip_by_value(proposals[:, 2], 0, widths - 1),
+                tf.clip_by_value(proposals[:, 3], 0, heights - 1)
+            ], axis=1)
+
+            # remove small boxes
+            ws = proposals[:, 2] - proposals[:, 0]
+            hs = proposals[:, 3] - proposals[:, 1]
+            valid = tf.where((ws >= self.min_size) & (hs >= self.min_size))
+
+            # update proposals, class_logits and bbox_deltas
+            proposals = tf.gather(proposals, valid[:, 0])
+            class_logits_selected = tf.gather(class_logits_selected, valid[:, 0])
+            bbox_deltas_selected = tf.gather(bbox_deltas_selected, valid[:, 0])
+
+            fg_scores = tf.sigmoid(class_logits_selected[:, 0])
+            # get tok-k pre nms proposals
+            top_k = tf.math.top_k(
+                fg_scores, 
+                k=tf.minimum(self.pre_nms_topk, tf.shape(fg_scores)[0])
+            )
+            
+            # update proposals, class_logits, bbox_deltas and fg_scores
+            proposals = tf.gather(proposals, top_k.indices)
+            class_logits_selected = tf.gather(
+                class_logits_selected, top_k.indices
+            )
+            bbox_deltas_selected = tf.gather(
+                bbox_deltas_selected, top_k.indices
+            )
+            fg_scores = tf.gather(fg_scores, top_k.indices)
+
+            # apply non-maximum suppression (NMS)
+            keep = tf.image.non_max_suppression(
+                proposals, 
+                fg_scores,
+                max_output_size=self.post_nms_topk,
+                iou_threshold=self.nms_thresh
+            )
+
+            # update proposals, class_logits, and bbox_deltas
+            # create proposals_batch_indices
+            proposals = tf.gather(proposals, keep)
+            class_logits_selected = tf.gather(class_logits_selected, keep)
+            bbox_deltas_selected = tf.gather(bbox_deltas_selected, keep)
+            proposals_batch_indices = tf.fill([tf.shape(proposals)[0]], index)
+
+            return proposals, proposals_batch_indices, \
+                class_logits_selected, bbox_deltas_selected
         
-        """
-        feature_maps is a list of feature maps, each feature map 
-        is a [H, W, C] tensor.
-        rois is a [N, 4] tensor, where each row is [x1, y1, x2, y2]
-        calculate roi_level, it is used to select the feature map.
-        roi_level is determined by the size of the roi, the range 
-        is [2, 5] corresponding P2, P3, P4 and P5 feature maps.
-        small rois are assigned to P2, large rois are assigned to P5.
-        roi_level shape is [N, 1], where N is the number of rois.
-        """
-        x1, y1, x2, y2 = tf.split(rois, 4, axis=1)
-        roi_h = y2 - y1
-        roi_w = x2 - x1
-        roi_area = roi_h * roi_w
-        roi_levels = tf.math.log(tf.sqrt(roi_area) / 224.0) / \
-            tf.math.log(2.0) + 4.0
-        roi_levels = tf.squeeze(roi_levels, axis=1)
-        roi_levels = tf.clip_by_value(
-            tf.cast(tf.round(roi_levels), tf.int32), 2, 5
+        results = tf.map_fn(
+            topk_per_image,
+            tf.range(batch_size),
+            fn_output_signature=(
+                tf.TensorSpec(shape=(None, 4), dtype=tf.float32),
+                tf.TensorSpec(shape=(None,), dtype=tf.int32),
+                tf.TensorSpec(shape=(None, 1), dtype=tf.float32),
+                tf.TensorSpec(shape=(None, 4), dtype=tf.float32)
+            )
         )
+
+        # proposals shape: [B, (None), 4]
+        # batch_indices shape: [B, (None)]
+        proposals, batch_indices, class_logits, bbox_deltas = results
+
+        # flatten proposals and batch_indices
+        # proposals shape: [B, (None), 4] -> [B*(None), 4]
+        # batch_indices shape: [B, (None)] -> [B*(None)]
+        proposals = tf.reshape(proposals, [-1, 4])
+        batch_indices = tf.reshape(batch_indices, [-1])
+        class_logits = tf.reshape(class_logits, [-1, 1])
+        bbox_deltas = tf.reshape(bbox_deltas, [-1, 4])
         
-        all_features = []
-        all_indices = []
+        tf.print('proposals shape:', tf.shape(proposals))
+        tf.print('batch_indices shape:', tf.shape(batch_indices))
+        tf.print('class_logits shape:', tf.shape(class_logits))
+        tf.print('bbox_deltas shape:', tf.shape(bbox_deltas))
 
-        # select the feature map according to roi_level
-        for i, stride in enumerate(self.feature_strides):
-            # i + 2 because roi_level starts from 2
-            # and feature_maps starts from 0
-            level = i + 2
-            mask = tf.equal(roi_levels, level)
-            rois_in_level = tf.boolean_mask(rois, mask)
-            indices_in_level = tf.boolean_mask(
-                tf.range(tf.shape(rois)[0]), mask
-            )
-
-            def rois_features(rois, indices, feature_map, stride, output_size):
-                scale = 1.0 / stride
-                boxes = rois * scale
-                # normalized to [0, 1], order is [y1, x1, y2, x2]
-                fm_height = tf.cast(tf.shape(feature_map)[0], tf.float32)
-                fm_width = tf.cast(tf.shape(feature_map)[1], tf.float32)
-                x1 = boxes[:, 0] / fm_width
-                y1 = boxes[:, 1] / fm_height
-                x2 = boxes[:, 2] / fm_width
-                y2 = boxes[:, 3] / fm_height
-                normalized_boxes = tf.stack([y1, x1, y2, x2], axis=1)
-                box_indices = tf.zeros([tf.shape(rois)[0]], dtype=tf.int32)
-
-                # features shape: [M, output_size, output_size, C]
-                feature_map_expand = tf.expand_dims(feature_map, axis=0)
-                features = tf.image.crop_and_resize(
-                    feature_map_expand, # [1, H, W, C]
-                    normalized_boxes,   # [M, 4], each row is [y1, x1, y2, x2]
-                    box_indices,        # [M], each value is 0
-                    crop_size=[output_size, output_size],
-                    method="bilinear"
-                )
-                return features, indices
-            
-            def no_features(output_size, feature_size):
-                return (
-                    tf.zeros(
-                        [ 0, output_size, output_size, feature_size ], 
-                        dtype=tf.float32
-                    ),
-                    tf.zeros([0], dtype=tf.int32)
-                )
-            
-            features, indices = tf.cond(
-                tf.shape(rois_in_level)[0] > 0,
-                lambda: rois_features(
-                    rois_in_level, 
-                    indices_in_level, 
-                    feature_maps[i], 
-                    stride, 
-                    self.output_size
-                ),
-                lambda: no_features(
-                    self.output_size, 
-                    self.feature_size
-                )
-            )
-            
-            all_features.append(features)
-            all_indices.append(indices)
-
-        all_features = tf.concat(all_features, axis=0)
-        all_indices = tf.concat(all_indices, axis=0)
-        sorted_indices = tf.argsort(all_indices)
-        sorted_features = tf.gather(all_features, sorted_indices)
-        
-        return tf.RaggedTensor.from_tensor(sorted_features)
+        return proposals, batch_indices, class_logits, bbox_deltas

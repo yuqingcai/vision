@@ -26,55 +26,14 @@ class ROIMaskHead(layers.Layer):
 
         self.resolution = roi_output_size * 2
 
-    def call(self, inputs):
-
-        masks = tf.map_fn(
-            self.forward, 
-            inputs, 
-            fn_output_signature=tf.RaggedTensorSpec(
-                shape=[ 
-                    None, 
-                    self.resolution, 
-                    self.resolution, 
-                    self.num_classes 
-                ], 
-                dtype=tf.float32,
-                ragged_rank=1
-            )
-        )
-        return masks
-    
-    def forward(self, x):
+    def call(self, features):
         """
-        x shape: [ N, sample_size, sample_size, feature_size ], 
-        mask shape: [ N, resolution, resolution, num_classes ]
+            features shape: [N, sample_size, sample_size, feature_size]
         """
-        masks = tf.map_fn(
-            self.generate,
-            x,
-            fn_output_signature=tf.TensorSpec(
-                shape=[
-                    self.resolution, 
-                    self.resolution, 
-                    self.num_classes 
-                ], 
-                dtype=tf.float32
-            )
-        )
-        return tf.RaggedTensor.from_tensor(masks)
-
-    def generate(self, x):
-        """
-        x shape: [ sample_size, sample_size, feature_size ], 
-        mask shape: [ resolution, resolution, num_classes ]
-        """
-        # expand dims to add batch dimension
-        x = tf.expand_dims(x, axis=0)
         for conv in self.conv_layers:
-            x = conv(x)
+            x = conv(features)
         x = self.upsample(x)
         x = self.mask_pred(x)
-        # squeezing the batch dimension
-        x = tf.squeeze(x, axis=0)
+        
+        tf.print('mask shape: ', tf.shape(x))
         return x
-    

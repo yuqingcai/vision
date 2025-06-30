@@ -1,6 +1,5 @@
 import tensorflow as tf
 from tensorflow.keras import layers
-from utils import sync_flatten_batch
 
 
 class AnchorGenerator(layers.Layer):
@@ -52,6 +51,9 @@ class AnchorGenerator(layers.Layer):
             [ tf.reshape(a, [-1, 4]) for a in anchors ], axis=0
         )
         batch_indices = tf.concat(batch_indices, axis=0)
+
+        tf.print('anchors_flatten shape:', tf.shape(anchors_flatten))
+        tf.print('batch_indices shape:', tf.shape(batch_indices))
 
         return anchors_flatten, batch_indices
     
@@ -177,99 +179,154 @@ class ProposalGenerator(layers.Layer):
         self.nms_thresh = nms_thresh
         self.min_size = min_size
     
-    def call(self, batch_indices, image_sizes, anchors,  
+    def call(self, anchors, batch_indices, image_sizes,   
              class_logits, bbox_deltas):
-        
+            
         image_sizes = tf.gather(image_sizes, batch_indices)
+        batch_size = tf.reduce_max(batch_indices) + 1
 
-        # decode bbox
-        # a_x, a_y are the center coordinates of the anchors
-        # a_w, a_h are the width and height of the anchors
-        a_w = anchors[:, 2] - anchors[:, 0]
-        a_h = anchors[:, 3] - anchors[:, 1]
-        a_x = anchors[:, 0] + 0.5 * a_w
-        a_y = anchors[:, 1] + 0.5 * a_h
+        def topk_per_image(index):
+            mask = tf.equal(batch_indices, index)
+            selected = tf.where(mask)[:, 0]
+            anchors_selected = tf.gather(anchors, selected)
+            class_logits_selected = tf.gather(class_logits, selected)
+            bbox_deltas_selected = tf.gather(bbox_deltas, selected)
+            image_sizes_selected = tf.gather(image_sizes, selected)
 
-        # t_x, t_y are the offsets to the center coordinates
-        # t_w, t_h are the log-scaled width and height
-        t_x = bbox_deltas[:, 0]
-        t_y = bbox_deltas[:, 1]
-        t_w = bbox_deltas[:, 2]
-        t_h = bbox_deltas[:, 3]
+            # decode bbox
+            # a_x, a_y are the center coordinates of the anchors
+            # a_w, a_h are the width and height of the anchors
+            a_w = anchors_selected[:, 2] - anchors_selected[:, 0]
+            a_h = anchors_selected[:, 3] - anchors_selected[:, 1]
+            a_x = anchors_selected[:, 0] + 0.5 * a_w
+            a_y = anchors_selected[:, 1] + 0.5 * a_h
 
-        # p_x, p_y are the predicted center coordinates
-        # p_w, p_h are the predicted width and height
-        # tf.clip_by_value is used to limit the range of t_w and t_h
-        # to prevent too large or too small boxes
-        p_x = a_x + t_x * a_w
-        p_y = a_y + t_y * a_h
-        p_w = a_w * tf.exp(tf.clip_by_value(t_w, -10.0, 10.0))
-        p_h = a_h * tf.exp(tf.clip_by_value(t_h, -10.0, 10.0))
+            # t_x, t_y are the offsets to the center coordinates
+            # t_w, t_h are the log-scaled width and height
+            t_x = bbox_deltas_selected[:, 0]
+            t_y = bbox_deltas_selected[:, 1]
+            t_w = bbox_deltas_selected[:, 2]
+            t_h = bbox_deltas_selected[:, 3]
 
-        # x_1, y_1, x_2, y_2 are the coordinates of the proposals
-        x_1 = p_x - 0.5 * p_w
-        y_1 = p_y - 0.5 * p_h
-        x_2 = p_x + 0.5 * p_w
-        y_2 = p_y + 0.5 * p_h
-        proposals = tf.stack([x_1, y_1, x_2, y_2], axis=1)
+            # p_x, p_y are the predicted center coordinates
+            # p_w, p_h are the predicted width and height
+            # tf.clip_by_value is used to limit the range of t_w and t_h
+            # to prevent too large or too small boxes
+            p_x = a_x + t_x * a_w
+            p_y = a_y + t_y * a_h
+            p_w = a_w * tf.exp(tf.clip_by_value(t_w, -10.0, 10.0))
+            p_h = a_h * tf.exp(tf.clip_by_value(t_h, -10.0, 10.0))
 
-        # clip proposals to the image size
-        heights = tf.cast(image_sizes[:, 0], tf.float32)
-        widths  = tf.cast(image_sizes[:, 1], tf.float32)
-        proposals = tf.stack([
-            tf.clip_by_value(proposals[:, 0], 0, widths - 1),
-            tf.clip_by_value(proposals[:, 1], 0, heights - 1),
-            tf.clip_by_value(proposals[:, 2], 0, widths - 1),
-            tf.clip_by_value(proposals[:, 3], 0, heights - 1)
-        ], axis=1)
+            # x_1, y_1, x_2, y_2 are the coordinates of the proposals
+            x_1 = p_x - 0.5 * p_w
+            y_1 = p_y - 0.5 * p_h
+            x_2 = p_x + 0.5 * p_w
+            y_2 = p_y + 0.5 * p_h
+            proposals = tf.stack([x_1, y_1, x_2, y_2], axis=1)
+
+            # clip proposals to the image size
+            heights = tf.cast(image_sizes_selected[:, 0], tf.float32)
+            widths  = tf.cast(image_sizes_selected[:, 1], tf.float32)
+            proposals = tf.stack([
+                tf.clip_by_value(proposals[:, 0], 0, widths - 1),
+                tf.clip_by_value(proposals[:, 1], 0, heights - 1),
+                tf.clip_by_value(proposals[:, 2], 0, widths - 1),
+                tf.clip_by_value(proposals[:, 3], 0, heights - 1)
+            ], axis=1)
+
+            # remove small boxes
+            ws = proposals[:, 2] - proposals[:, 0]
+            hs = proposals[:, 3] - proposals[:, 1]
+            valid = tf.where((ws >= self.min_size) & (hs >= self.min_size))
+
+            # update proposals, class_logits and bbox_deltas
+            proposals = tf.gather(proposals, valid[:, 0])
+            class_logits_selected = tf.gather(class_logits_selected, valid[:, 0])
+            bbox_deltas_selected = tf.gather(bbox_deltas_selected, valid[:, 0])
+
+            fg_scores = tf.sigmoid(class_logits_selected[:, 0])
+            # get tok-k pre nms proposals
+            top_k = tf.math.top_k(
+                fg_scores, 
+                k=tf.minimum(self.pre_nms_topk, tf.shape(fg_scores)[0])
+            )
+            
+            # update proposals, class_logits, bbox_deltas and fg_scores
+            proposals = tf.gather(proposals, top_k.indices)
+            class_logits_selected = tf.gather(
+                class_logits_selected, top_k.indices
+            )
+            bbox_deltas_selected = tf.gather(
+                bbox_deltas_selected, top_k.indices
+            )
+            fg_scores = tf.gather(fg_scores, top_k.indices)
+
+            # apply non-maximum suppression (NMS)
+            keep = tf.image.non_max_suppression(
+                proposals, 
+                fg_scores,
+                max_output_size=self.post_nms_topk,
+                iou_threshold=self.nms_thresh
+            )
+
+            # update proposals, class_logits, and bbox_deltas
+            # create proposals_batch_indices
+            proposals = tf.gather(proposals, keep)
+            class_logits_selected = tf.gather(class_logits_selected, keep)
+            bbox_deltas_selected = tf.gather(bbox_deltas_selected, keep)
+            proposals_batch_indices = tf.fill([tf.shape(proposals)[0]], index)
+
+            return proposals, proposals_batch_indices, \
+                class_logits_selected, bbox_deltas_selected
         
+        results = tf.map_fn(
+            topk_per_image,
+            tf.range(batch_size),
+            fn_output_signature=(
+                tf.TensorSpec(shape=(None, 4), dtype=tf.float32),
+                tf.TensorSpec(shape=(None,), dtype=tf.int32),
+                tf.TensorSpec(shape=(None, 1), dtype=tf.float32),
+                tf.TensorSpec(shape=(None, 4), dtype=tf.float32)
+            )
+        )
+
+        # proposals shape: [B, (None), 4]
+        # batch_indices shape: [B, (None)]
+        # class_logits shape: [B, (None), 1]
+        # bbox_deltas shape: [B, (None), 4]
+        # where (None) is the number of proposals for each image
+        # in the batch, which can vary
+        proposals, batch_indices, class_logits, bbox_deltas = results
+
+        # flatten proposals, batch_indices, class_logits, and bbox_deltas
+        # to make them compatible with the rest of the model
+        # proposals shape: [B, (None), 4] -> [B*(None), 4]
+        # batch_indices shape: [B, (None)] -> [B*(None)]
+        # class_logits shape: [B, (None), 1] -> [B*(None), 1]
+        # bbox_deltas shape: [B, (None), 4] -> [B*(None), 4]
+        if isinstance(proposals, tf.RaggedTensor):
+            proposals = proposals.flat_values
+        else:
+            proposals = tf.reshape(proposals, [-1, 4])
+
+        if isinstance(batch_indices, tf.RaggedTensor):
+            batch_indices = batch_indices.flat_values
+        else:
+            batch_indices = tf.reshape(batch_indices, [-1])
+
+        if isinstance(class_logits, tf.RaggedTensor):
+            class_logits = class_logits.flat_values
+        else:
+            class_logits = tf.reshape(class_logits, [-1, 1])
+        
+        if isinstance(bbox_deltas, tf.RaggedTensor):
+            bbox_deltas = bbox_deltas.flat_values
+        else:
+            bbox_deltas = tf.reshape(bbox_deltas, [-1, 4])
+
         tf.print('proposals shape:', tf.shape(proposals))
+        tf.print('batch_indices shape:', tf.shape(batch_indices))
+        tf.print('class_logits shape:', tf.shape(class_logits))
+        tf.print('bbox_deltas shape:', tf.shape(bbox_deltas))
 
-        # remove small boxes
-        ws = proposals[:, 2] - proposals[:, 0]
-        hs = proposals[:, 3] - proposals[:, 1]
-        valid = tf.where((ws >= self.min_size) & (hs >= self.min_size))
-
-        # update proposals and batch_indices
-        proposals, batch_indices = sync_flatten_batch(
-            proposals, 
-            batch_indices, 
-            valid[:, 0]
-        )
-
-        fg_scores = tf.gather(tf.sigmoid(class_logits[:, 0]), valid[:, 0])
-
-        # get tok-k pre nms proposals
-        top_k = tf.math.top_k(
-            fg_scores, 
-            k=tf.minimum(self.pre_nms_topk, tf.shape(fg_scores)[0])
-        )
-        
-        # update proposals and batch_indices
-        proposals, batch_indices = sync_flatten_batch(
-            proposals, 
-            batch_indices, 
-            top_k.indices
-        )
-
-        fg_scores = tf.gather(fg_scores, top_k.indices)
-
-        # apply non-maximum suppression (NMS)
-        keep = tf.image.non_max_suppression(
-            proposals, 
-            fg_scores,
-            max_output_size=self.post_nms_topk,
-            iou_threshold=self.nms_thresh
-        )
-        # update proposals and batch_indices
-        proposals, batch_indices = sync_flatten_batch(
-            proposals, 
-            batch_indices, 
-            keep
-        )
-        
-        tf.print('tok-k proposals shape:', tf.shape(proposals))
-        tf.print('tok-k batch_indices shape:', tf.shape(batch_indices))
-        
-        # add batch indices to proposals
-        return proposals, batch_indices
+        return proposals, batch_indices, class_logits, bbox_deltas
