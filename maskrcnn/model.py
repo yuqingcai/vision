@@ -45,7 +45,7 @@ class MaskRCNN(Model):
             min_size=16
         )
         
-        self.roi_align_class = ROIAlign(
+        self.roi_align = ROIAlign(
             output_size=7, 
             sampling_ratio=2,
             feature_strides=self.fpn.strides(),
@@ -59,17 +59,17 @@ class MaskRCNN(Model):
             feature_size=self.fpn_feature_size
         )
 
-        self.roi_classifier_head = ROIClassifierHead(
+        self.classifier_head = ROIClassifierHead(
             num_classes=self.class_num + 1, # +1 for background class
             hidden_dim=1024
         )
 
-        self.roi_bbox_head = ROIBBoxHead(
+        self.bbox_head = ROIBBoxHead(
             num_classes=self.class_num + 1, # +1 for background class
             hidden_dim=1024
         )
         
-        self.roi_mask_head = ROIMaskHead(
+        self.mask_head = ROIMaskHead(
             num_classes=self.class_num,
             conv_dim=256,
             num_convs=4,
@@ -112,7 +112,7 @@ class MaskRCNN(Model):
         
         p2, p3, p4, p5 = self.fpn([c2, c3, c4, c5])
         
-        anchors, batch_indices = self.anchor_generator(
+        anchors, anchor_bis = self.anchor_generator(
             feature_maps=[p2, p3, p4, p5],
             strides=self.fpn.strides(),
             base_sizes=self.fpn.base_sizes(),
@@ -121,43 +121,44 @@ class MaskRCNN(Model):
             image_sizes=image_sizes
         )
         
-        rpn_class_logits, rpn_bbox_deltas = self.rpn_head([p2, p3, p4, p5])
-
-        proposals, batch_indices, rpn_class_logits, rpn_bbox_deltas = \
-            self.proposal_generator(
-                anchors, batch_indices, image_sizes, rpn_class_logits, 
-                rpn_bbox_deltas
+        rpn_objectness_logits, rpn_bbox_deltas = self.rpn_head(
+            [p2, p3, p4, p5], training=training)
+        
+        proposals, proposals_bis, rpn_objectness_logits, rpn_bbox_deltas = \
+            self.proposal_generator(anchors, anchor_bis, image_sizes, 
+                rpn_objectness_logits, rpn_bbox_deltas
             )
         
         # roi class and bbox head
-        features_class, feature_batch_indices = self.roi_align_class(
+        features, feature_bis = self.roi_align(
             feature_maps=[p2, p3, p4, p5], 
             rois=proposals,
-            batch_indices=batch_indices
+            batch_indices=proposals_bis
         )
-        class_logits = 0.0
-        # class_logits = self.roi_classifier_head(
-        #     features_class, 
-        #     training=training
-        # )
+
+        class_logits = self.classifier_head(
+            features, 
+            feature_bis,
+            training=training
+        )
         
-        bbox_deltas = 0.0
-        # bbox_deltas = self.roi_bbox_head(
-        #     features_class, 
-        #     training=training
-        # )
+        bbox_deltas = self.bbox_head(
+            features, 
+            feature_bis,
+            training=training
+        )
         
-        # # roi mask head
-        # features_mask, _ = self.roi_align_mask(
-        #     feature_maps=[p2, p3, p4, p5], 
-        #     rois=proposals,
-        #     batch_indices=batch_indices
-        # )
-        masks = 0.0
-        # masks = self.roi_mask_head(
-        #     features_mask, 
-        #     training=training
-        # )
+        # roi mask head
+        features_mask, features_mask_bis = self.roi_align_mask(
+            feature_maps=[p2, p3, p4, p5], 
+            rois=proposals,
+            batch_indices=proposals_bis
+        )
+        masks = self.mask_head(
+            features_mask, 
+            features_mask_bis,
+            training=training
+        )
 
         if os.environ.get("GPU_ENABLE", "FALSE") == "TRUE":
             if gpus:
@@ -166,16 +167,16 @@ class MaskRCNN(Model):
 
         return (
             proposals, 
-            rpn_class_logits,
+            proposals_bis, 
+            rpn_objectness_logits, 
             rpn_bbox_deltas,
             class_logits, 
             bbox_deltas, 
-            masks,
-            feature_batch_indices
+            masks, 
         )
 
-    def compile(self, optimizer):
-        super().compile()
+    def compile(self, optimizer, *args, **kwargs):
+        super().compile(*args, **kwargs)
         self.optimizer = optimizer
 
     @tf.function(reduce_retracing=True)
@@ -187,9 +188,13 @@ class MaskRCNN(Model):
         gt_class_ids = batch['category_id']
 
         with tf.GradientTape() as tape:
-            rois, rpn_class_logits, rpn_box_deltas, \
-                class_logits, bbox_deltas, masks, batch_indices = \
-                    self.call(images, sizes, training=True)
+            proposals, \
+            proposals_bis, \
+            rpn_objectness_logits, \
+            rpn_bbox_deltas,\
+            class_logits, \
+            bbox_deltas, \
+            masks = self.call(images, sizes, training=True)
 
             # loss_objectness = loss_objectness_fn()
             # loss_rpn_box_reg = loss_rpn_box_reg_fn()
@@ -205,25 +210,25 @@ class MaskRCNN(Model):
             #     gt_masks
             # )
 
-            loss_objectness = tf.reduce_mean(tf.square(rpn_class_logits))
-            loss_rpn_box_reg = tf.reduce_mean(tf.square(rpn_box_deltas))
-            loss_class = tf.reduce_mean(tf.square(rpn_class_logits))
-            loss_box_reg = tf.reduce_mean(tf.square(rpn_class_logits))
-            loss_mask = tf.reduce_mean(tf.square(rpn_class_logits))
+        #     loss_objectness = tf.reduce_mean(tf.square(rpn_class_logits))
+        #     loss_rpn_box_reg = tf.reduce_mean(tf.square(rpn_box_deltas))
+        #     loss_class = tf.reduce_mean(tf.square(rpn_class_logits))
+        #     loss_box_reg = tf.reduce_mean(tf.square(rpn_class_logits))
+        #     loss_mask = tf.reduce_mean(tf.square(rpn_class_logits))
 
-            loss_total = loss_objectness + loss_rpn_box_reg + \
-                loss_class + loss_box_reg + loss_mask
+        #     loss_total = loss_objectness + loss_rpn_box_reg + \
+        #         loss_class + loss_box_reg + loss_mask
 
-        grads = tape.gradient(loss_total, self.trainable_variables)
-        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+        # grads = tape.gradient(loss_total, self.trainable_variables)
+        # self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
         
         # Update metrics
-        self.loss_objectness_tracker.update_state(loss_objectness)
-        self.loss_rpn_box_reg_tracker.update_state(loss_rpn_box_reg)
-        self.loss_class_tracker.update_state(loss_class)
-        self.loss_box_reg_tracker.update_state(loss_box_reg)
-        self.loss_mask_tracker.update_state(loss_mask)
-        self.loss_total_tracker.update_state(loss_total)
+        # self.loss_objectness_tracker.update_state(loss_objectness)
+        # self.loss_rpn_box_reg_tracker.update_state(loss_rpn_box_reg)
+        # self.loss_class_tracker.update_state(loss_class)
+        # self.loss_box_reg_tracker.update_state(loss_box_reg)
+        # self.loss_mask_tracker.update_state(loss_mask)
+        # self.loss_total_tracker.update_state(loss_total)
         
         return {
             'loss_objectness': self.loss_objectness_tracker.result(),

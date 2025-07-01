@@ -12,7 +12,6 @@ class ROIAlign(layers.Layer):
         self.feature_size = feature_size
 
     def call(self, feature_maps, rois, batch_indices):
-
         """
             feature_maps is a list of feature map, each feature map is 
             a [B, H, W, C] tensor.
@@ -26,7 +25,7 @@ class ROIAlign(layers.Layer):
 
         tf.print('rois shape:', tf.shape(rois),
                 'batch_indices shape:', tf.shape(batch_indices))
-                
+        
         x1, y1, x2, y2 = tf.split(rois, 4, axis=1)
         roi_h = y2 - y1
         roi_w = x2 - x1
@@ -38,7 +37,7 @@ class ROIAlign(layers.Layer):
         
         all_features = []
         all_indices = []
-        all_feature_batch_indices = []
+        all_feature_bis = []
 
         for i, stride in enumerate(self.feature_strides):
             # i + 2 because level starts from 2 and 
@@ -106,22 +105,19 @@ class ROIAlign(layers.Layer):
                     self.feature_size
                 )
             )
-
+            
             all_features.append(features)
             all_indices.append(indices)
-            all_feature_batch_indices.append(batch_indices_selected)
+            all_feature_bis.append(batch_indices_selected)
 
         # sort all indices to maintain the order of rois
-        roi_indices = tf.argsort(tf.concat(all_indices, axis=0), axis=0)
+        indices = tf.argsort(tf.concat(all_indices, axis=0), axis=0)
 
-        roi_features = tf.gather(tf.concat(all_features, axis=0), roi_indices)
-        roi_feature_batch_indices = tf.gather(
-            tf.concat(all_feature_batch_indices, axis=0), 
-            roi_indices
-        )
+        features = tf.gather(tf.concat(all_features, axis=0), indices)
+        feature_bis = tf.gather(tf.concat(all_feature_bis, axis=0), indices)
         
         tf.debugging.assert_equal(
-            tf.shape(roi_features)[0], tf.shape(rois)[0],
+            tf.shape(features)[0], tf.shape(rois)[0],
             message="roi features batch size does not match rois batch size"
         )
 
@@ -129,9 +125,8 @@ class ROIAlign(layers.Layer):
         # roi_feature_batch_indices shape: [N]        
         tf.print(
             'rois shape:', tf.shape(rois),
-            'roi_features shape:', 
-            tf.shape(roi_features),
-            ', roi_feature_batch_indices shape:', 
-            tf.shape(roi_feature_batch_indices))
-        return roi_features, roi_feature_batch_indices
+            ' ,roi_features shape:', tf.shape(features),
+            ' ,roi_feature_batch_indices shape:', tf.shape(feature_bis))
+        
+        return features, feature_bis
     

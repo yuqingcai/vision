@@ -1,6 +1,7 @@
 import tensorflow as tf
 from pycocotools.coco import COCO
 from pycocotools import mask as maskUtils
+from functools import partial
 import os
 import functools
 import numpy as np
@@ -259,9 +260,7 @@ def generator(entries):
         }
 
 
-def preprocess(batch):
-    min_size = 800
-    max_size = 1333
+def preprocess(batch, min_size, max_size):
     
     scales = tf.map_fn(
         lambda size: scale_to(size, min_size, max_size),
@@ -318,7 +317,8 @@ def preprocess(batch):
     return batch
 
 
-def create_dataset(ann_file, img_dir, batch_size=4, shuffle=False):
+def create_dataset(ann_file, img_dir, batch_size=4, shuffle=False, 
+                   min_size=800, max_size=1333):
     coco = COCO(ann_file)
     img_ids = coco.getImgIds()
     entries = load_image_info(coco, img_ids, img_dir)
@@ -357,7 +357,9 @@ def create_dataset(ann_file, img_dir, batch_size=4, shuffle=False):
     
     print(f"Dataset size: {len(entries)/batch_size}")
 
-    ds = ds.ragged_batch(batch_size)    
-    ds = ds.map(preprocess, num_parallel_calls=tf.data.AUTOTUNE)
+    ds = ds.ragged_batch(batch_size)
+
+    ds = ds.map(partial(preprocess, min_size=min_size, max_size=max_size), 
+        num_parallel_calls=tf.data.AUTOTUNE)
     ds = ds.prefetch(tf.data.AUTOTUNE)
     return ds

@@ -52,8 +52,8 @@ class AnchorGenerator(layers.Layer):
         )
         batch_indices = tf.concat(batch_indices, axis=0)
 
-        tf.print('anchors_flatten shape:', tf.shape(anchors_flatten))
-        tf.print('batch_indices shape:', tf.shape(batch_indices))
+        # tf.print('anchors_flatten shape:', tf.shape(anchors_flatten))
+        # tf.print('batch_indices shape:', tf.shape(batch_indices))
 
         return anchors_flatten, batch_indices
     
@@ -121,30 +121,30 @@ class RPNHead(layers.Layer):
     def __init__(self, anchors_per_location, feature_size, **kwargs):
         super().__init__(**kwargs)
 
-        self.conv = layers.Conv2D(feature_size, 
-                                  3, 
-                                  padding="same", 
-                                  activation="relu")
-        self.class_logits = layers.Conv2D(anchors_per_location, 1)
-        self.bbox_deltas = layers.Conv2D(anchors_per_location * 4, 1)
+        self.conv = layers.Conv2D(
+            feature_size, 3, padding="same", activation="relu"
+        )
+        self.objectness_logits = layers.Conv2D(
+            anchors_per_location, 1, activation=None
+        )
+        self.bbox_deltas = layers.Conv2D(
+            anchors_per_location * 4, 1, activation=None
+        )
     
     def call(self, feature_maps):
-        class_logits = []
+        objectness_logits = []
         bbox_deltas = []
 
         for feature_map in feature_maps:
             x = self.conv(feature_map)
-            class_logits_feature_map = self.class_logits(x)
+            objectness_feature_map = self.objectness_logits(x)
             bbox_deltas_feature_map = self.bbox_deltas(x)
 
-            shape_class_logits_feature_map = tf.shape(class_logits_feature_map)
-            shape_bbox_deltas_feature_map = tf.shape(bbox_deltas_feature_map)
-
-            # reshape class_logits_feature_map from 
+            # reshape objectness_feature_map from 
             # [B, H, W, anchors_per_location] to [B, N, 1]
-            class_logits_feature_map = tf.reshape(
-                class_logits_feature_map, 
-                [ tf.shape(class_logits_feature_map)[0], -1, 1]
+            objectness_feature_map = tf.reshape(
+                objectness_feature_map, 
+                [ tf.shape(objectness_feature_map)[0], -1, 1]
             )
             
             # reshape bbox_deltas_feature_map from 
@@ -154,20 +154,20 @@ class RPNHead(layers.Layer):
                 [ tf.shape(bbox_deltas_feature_map)[0], -1, 4]
             )
 
-            class_logits.append(class_logits_feature_map)
+            objectness_logits.append(objectness_feature_map)
             bbox_deltas.append(bbox_deltas_feature_map)
 
-        # flatten class_logits and bbox_deltas
-        # class_logits_flatten shape [B, N, 1] -> [B*N, 1]
-        # bbox_deltas_flatten shape [B, N, 4] -> [B*N, 4]
-        class_logits_flatten = tf.concat(
-            [ tf.reshape(a, [-1, 1]) for a in class_logits ], axis=0
+        # flatten objectness_logits and bbox_deltas
+        # objectness_logits shape [B, N, 1] -> [B*N, 1]
+        # bbox_deltas shape [B, N, 4] -> [B*N, 4]
+        objectness_logits = tf.concat(
+            [ tf.reshape(a, [-1, 1]) for a in objectness_logits ], axis=0
         )
-        bbox_deltas_flatten = tf.concat(
+        bbox_deltas = tf.concat(
             [ tf.reshape(a, [-1, 4]) for a in bbox_deltas ], axis=0
         )
         
-        return class_logits_flatten, bbox_deltas_flatten
+        return objectness_logits, bbox_deltas
 
 
 class ProposalGenerator(layers.Layer):
@@ -180,16 +180,17 @@ class ProposalGenerator(layers.Layer):
         self.min_size = min_size
     
     def call(self, anchors, batch_indices, image_sizes,   
-             class_logits, bbox_deltas):
+             objectness_logits, bbox_deltas):
             
         image_sizes = tf.gather(image_sizes, batch_indices)
         batch_size = tf.reduce_max(batch_indices) + 1
 
-        def topk_per_image(index):
+        # select top-k proposals per image
+        def topk_proposals_per_image(index):
             mask = tf.equal(batch_indices, index)
             selected = tf.where(mask)[:, 0]
             anchors_selected = tf.gather(anchors, selected)
-            class_logits_selected = tf.gather(class_logits, selected)
+            objectness_logits_selected = tf.gather(objectness_logits, selected)
             bbox_deltas_selected = tf.gather(bbox_deltas, selected)
             image_sizes_selected = tf.gather(image_sizes, selected)
 
@@ -239,22 +240,23 @@ class ProposalGenerator(layers.Layer):
             hs = proposals[:, 3] - proposals[:, 1]
             valid = tf.where((ws >= self.min_size) & (hs >= self.min_size))
 
-            # update proposals, class_logits and bbox_deltas
+            # update proposals, objectness_logits and bbox_deltas
             proposals = tf.gather(proposals, valid[:, 0])
-            class_logits_selected = tf.gather(class_logits_selected, valid[:, 0])
+            objectness_logits_selected = tf.gather(
+                objectness_logits_selected, valid[:, 0])
             bbox_deltas_selected = tf.gather(bbox_deltas_selected, valid[:, 0])
 
-            fg_scores = tf.sigmoid(class_logits_selected[:, 0])
+            fg_scores = tf.sigmoid(objectness_logits_selected[:, 0])
             # get tok-k pre nms proposals
             top_k = tf.math.top_k(
                 fg_scores, 
                 k=tf.minimum(self.pre_nms_topk, tf.shape(fg_scores)[0])
             )
             
-            # update proposals, class_logits, bbox_deltas and fg_scores
+            # update proposals, objectness_logits, bbox_deltas and fg_scores
             proposals = tf.gather(proposals, top_k.indices)
-            class_logits_selected = tf.gather(
-                class_logits_selected, top_k.indices
+            objectness_logits_selected = tf.gather(
+                objectness_logits_selected, top_k.indices
             )
             bbox_deltas_selected = tf.gather(
                 bbox_deltas_selected, top_k.indices
@@ -269,64 +271,73 @@ class ProposalGenerator(layers.Layer):
                 iou_threshold=self.nms_thresh
             )
 
-            # update proposals, class_logits, and bbox_deltas
+            # update proposals, objectness_logits, and bbox_deltas
             # create proposals_batch_indices
             proposals = tf.gather(proposals, keep)
-            class_logits_selected = tf.gather(class_logits_selected, keep)
+            proposal_bis = tf.fill([tf.shape(proposals)[0]], index)
+            objectness_logits_selected = tf.gather(
+                objectness_logits_selected, keep
+            )
             bbox_deltas_selected = tf.gather(bbox_deltas_selected, keep)
-            proposals_batch_indices = tf.fill([tf.shape(proposals)[0]], index)
-
-            return proposals, proposals_batch_indices, \
-                class_logits_selected, bbox_deltas_selected
+            
+            tf.print(
+                'proposals shape:',
+                tf.shape(proposals),
+                ', proposal_bis shape:',
+                tf.shape(proposal_bis),
+                ', objectness_logits shape:',
+                tf.shape(objectness_logits_selected),
+                ', bbox_deltas shape:',
+                tf.shape(bbox_deltas_selected)
+            )
+            
+            return tf.RaggedTensor.from_tensor(proposals), \
+                proposal_bis,\
+                tf.RaggedTensor.from_tensor(objectness_logits_selected), \
+                tf.RaggedTensor.from_tensor(bbox_deltas_selected)
         
         results = tf.map_fn(
-            topk_per_image,
+            topk_proposals_per_image,
             tf.range(batch_size),
             fn_output_signature=(
-                tf.TensorSpec(shape=(None, 4), dtype=tf.float32),
-                tf.TensorSpec(shape=(None,), dtype=tf.int32),
-                tf.TensorSpec(shape=(None, 1), dtype=tf.float32),
-                tf.TensorSpec(shape=(None, 4), dtype=tf.float32)
+                tf.RaggedTensorSpec(shape=(None, 4), dtype=tf.float32),
+                tf.RaggedTensorSpec(shape=(None,), dtype=tf.int32),
+                tf.RaggedTensorSpec(shape=(None, 1), dtype=tf.float32),
+                tf.RaggedTensorSpec(shape=(None, 4), dtype=tf.float32)
             )
         )
 
         # proposals shape: [B, (None), 4]
         # batch_indices shape: [B, (None)]
-        # class_logits shape: [B, (None), 1]
+        # objectness_logits shape: [B, (None), 1]
         # bbox_deltas shape: [B, (None), 4]
         # where (None) is the number of proposals for each image
         # in the batch, which can vary
-        proposals, batch_indices, class_logits, bbox_deltas = results
+        proposals, batch_indices, objectness_logits, bbox_deltas = results
 
-        # flatten proposals, batch_indices, class_logits, and bbox_deltas
+        # flatten proposals, batch_indices, objectness_logits, and bbox_deltas
         # to make them compatible with the rest of the model
+        # 
         # proposals shape: [B, (None), 4] -> [B*(None), 4]
         # batch_indices shape: [B, (None)] -> [B*(None)]
-        # class_logits shape: [B, (None), 1] -> [B*(None), 1]
+        # objectness_logits shape: [B, (None), 1] -> [B*(None), 1]
         # bbox_deltas shape: [B, (None), 4] -> [B*(None), 4]
+        # 
+        proposals = proposals.merge_dims(0, 1)
         if isinstance(proposals, tf.RaggedTensor):
-            proposals = proposals.flat_values
-        else:
-            proposals = tf.reshape(proposals, [-1, 4])
+            proposals = proposals.to_tensor()
 
+        batch_indices = batch_indices.merge_dims(0, 1)
         if isinstance(batch_indices, tf.RaggedTensor):
-            batch_indices = batch_indices.flat_values
-        else:
-            batch_indices = tf.reshape(batch_indices, [-1])
+            batch_indices = batch_indices.to_tensor()
 
-        if isinstance(class_logits, tf.RaggedTensor):
-            class_logits = class_logits.flat_values
-        else:
-            class_logits = tf.reshape(class_logits, [-1, 1])
-        
+        objectness_logits = objectness_logits.merge_dims(0, 1)
+        if isinstance(objectness_logits, tf.RaggedTensor):
+            objectness_logits = objectness_logits.to_tensor()
+
+        bbox_deltas = bbox_deltas.merge_dims(0, 1)
         if isinstance(bbox_deltas, tf.RaggedTensor):
-            bbox_deltas = bbox_deltas.flat_values
-        else:
-            bbox_deltas = tf.reshape(bbox_deltas, [-1, 4])
-
-        tf.print('proposals shape:', tf.shape(proposals))
-        tf.print('batch_indices shape:', tf.shape(batch_indices))
-        tf.print('class_logits shape:', tf.shape(class_logits))
-        tf.print('bbox_deltas shape:', tf.shape(bbox_deltas))
-
-        return proposals, batch_indices, class_logits, bbox_deltas
+            bbox_deltas = bbox_deltas.to_tensor()
+        
+        return proposals, batch_indices, objectness_logits, bbox_deltas
+    

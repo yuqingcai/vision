@@ -310,3 +310,16 @@ class ProposalGenerator(layers.Layer):
         tf.print('bbox_deltas shape:', tf.shape(bbox_deltas))
 
         return proposals, batch_indices, class_logits, bbox_deltas
+
+
+
+       shape = tf.shape(features)
+        feature_dim = shape[1] * shape[2] * shape[3]
+        # flatten features to shape [ N, feature_dim ]
+        x = tf.reshape(features, [ -1,  feature_dim ])
+        x = self.fc1(x)
+        x = self.fc2(x)
+        bbox_deltas = self.bbox_pred(x)
+        
+        tf.print('bbox_deltas shape:', tf.shape(bbox_deltas))
+        return bbox_deltas
