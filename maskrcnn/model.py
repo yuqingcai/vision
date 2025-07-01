@@ -209,12 +209,12 @@ class MaskRCNN(Model):
             #     masks, 
             #     gt_masks
             # )
-
-        #     loss_objectness = tf.reduce_mean(tf.square(rpn_class_logits))
-        #     loss_rpn_box_reg = tf.reduce_mean(tf.square(rpn_box_deltas))
-        #     loss_class = tf.reduce_mean(tf.square(rpn_class_logits))
-        #     loss_box_reg = tf.reduce_mean(tf.square(rpn_class_logits))
-        #     loss_mask = tf.reduce_mean(tf.square(rpn_class_logits))
+        
+        #     loss_objectness = tf.reduce_mean(tf.square(class_logits))
+        #     loss_rpn_box_reg = tf.reduce_mean(tf.square(class_logits))
+        #     loss_class = tf.reduce_mean(tf.square(class_logits))
+        #     loss_box_reg = tf.reduce_mean(tf.square(class_logits))
+        #     loss_mask = tf.reduce_mean(tf.square(class_logits))
 
         #     loss_total = loss_objectness + loss_rpn_box_reg + \
         #         loss_class + loss_box_reg + loss_mask
@@ -222,7 +222,7 @@ class MaskRCNN(Model):
         # grads = tape.gradient(loss_total, self.trainable_variables)
         # self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
         
-        # Update metrics
+        # # Update metrics
         # self.loss_objectness_tracker.update_state(loss_objectness)
         # self.loss_rpn_box_reg_tracker.update_state(loss_rpn_box_reg)
         # self.loss_class_tracker.update_state(loss_class)

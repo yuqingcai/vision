@@ -14,7 +14,7 @@ import itertools
 import random
 from tensorflow.keras import mixed_precision
 
-os.environ["GPU_ENABLE"] = "FALSE"
+os.environ["GPU_ENABLE"] = "TRUE"
 
 if os.environ.get("GPU_ENABLE", "FALSE") == "FALSE":
     tf.config.set_visible_devices([], 'GPU')
@@ -31,14 +31,14 @@ train_img_dir = os.path.join(coco_root, 'train2017')
 ann_file = os.path.join(coco_root, 'annotations/instances_train2017.json')
 
 if __name__ == '__main__':
-    batch_size = 8
+    batch_size = 4
     ds_train = create_dataset(
         ann_file=ann_file,
         img_dir=train_img_dir,
         batch_size=batch_size,
         shuffle=False,
         min_size=200,   # 800
-        max_size=300    # 1333
+        max_size=200    # 1333
     )
     
     model = MaskRCNN(
