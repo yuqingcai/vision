@@ -64,9 +64,10 @@ class ROIClassifierHead(layers.Layer):
             class_logits = class_logits.to_tensor()
         class_logits = tf.gather(class_logits, indices)
 
-        tf.print(
-            'class_logits shape:', tf.shape(class_logits)
-        )
+        # tf.print(
+        #     'ROIClassifierHead',
+        #     'class_logits:', tf.shape(class_logits)
+        # )
 
         return class_logits
     

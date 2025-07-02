@@ -17,7 +17,10 @@ class AnchorGenerator(layers.Layer):
         ratios = tf.constant(ratios, dtype=tf.float32)
         scales = tf.constant(scales, dtype=tf.float32)
 
-        # tf.print('origin_sizes shape:', tf.shape(origin_sizes))
+        # tf.print(
+        #         'AnchorGenerator',
+        #         'image_sizes:', tf.shape(image_sizes)
+        # )
         
         if len(feature_maps) != len(strides) or \
            len(feature_maps) != len(base_sizes):
@@ -52,8 +55,11 @@ class AnchorGenerator(layers.Layer):
         )
         batch_indices = tf.concat(batch_indices, axis=0)
 
-        # tf.print('anchors_flatten shape:', tf.shape(anchors_flatten))
-        # tf.print('batch_indices shape:', tf.shape(batch_indices))
+        # tf.print(
+        #         'AnchorGenerator',
+        #         'anchors:', tf.shape(anchors_flatten),
+        #         'batch_indices:', tf.shape(batch_indices)
+        # )
 
         return anchors_flatten, batch_indices
     
@@ -188,11 +194,12 @@ class ProposalGenerator(layers.Layer):
         # select top-k proposals per image
         def topk_proposals_per_image(index):
             mask = tf.equal(batch_indices, index)
-            selected = tf.where(mask)[:, 0]
-            anchors_selected = tf.gather(anchors, selected)
-            objectness_logits_selected = tf.gather(objectness_logits, selected)
-            bbox_deltas_selected = tf.gather(bbox_deltas, selected)
-            image_sizes_selected = tf.gather(image_sizes, selected)
+            anchors_selected = tf.boolean_mask(anchors, mask)
+            objectness_logits_selected = tf.boolean_mask(
+                objectness_logits, mask
+            )
+            bbox_deltas_selected = tf.boolean_mask(bbox_deltas, mask)
+            image_sizes_selected = tf.boolean_mask(image_sizes, mask)
 
             # decode bbox
             # a_x, a_y are the center coordinates of the anchors
@@ -280,17 +287,14 @@ class ProposalGenerator(layers.Layer):
             )
             bbox_deltas_selected = tf.gather(bbox_deltas_selected, keep)
             
-            tf.print(
-                'proposals shape:',
-                tf.shape(proposals),
-                ', proposal_bis shape:',
-                tf.shape(proposal_bis),
-                ', objectness_logits shape:',
-                tf.shape(objectness_logits_selected),
-                ', bbox_deltas shape:',
-                tf.shape(bbox_deltas_selected)
-            )
-            
+            # tf.print(
+            #     'ProposalGenerator topk_proposals_per_image',
+            #     'proposals:', tf.shape(proposals),
+            #     'proposal_bis:', tf.shape(proposal_bis),
+            #     'objectness_logits:', tf.shape(objectness_logits_selected),
+            #     'bbox_deltas:', tf.shape(bbox_deltas_selected)
+            # )
+
             return tf.RaggedTensor.from_tensor(proposals), \
                 proposal_bis,\
                 tf.RaggedTensor.from_tensor(objectness_logits_selected), \

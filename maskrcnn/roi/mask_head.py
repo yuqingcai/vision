@@ -80,8 +80,9 @@ class ROIMaskHead(layers.Layer):
             masks = masks.to_tensor()
         masks = tf.gather(masks, indices)
 
-        tf.print(
-            'masks shape:', tf.shape(masks),
-        )
+        # tf.print(
+        #     'ROIMaskHead', 
+        #     'masks:', tf.shape(masks),
+        # )
 
         return masks

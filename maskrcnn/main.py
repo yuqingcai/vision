@@ -14,7 +14,7 @@ import itertools
 import random
 from tensorflow.keras import mixed_precision
 
-os.environ["GPU_ENABLE"] = "TRUE"
+os.environ["GPU_ENABLE"] = "FALSE"
 
 if os.environ.get("GPU_ENABLE", "FALSE") == "FALSE":
     tf.config.set_visible_devices([], 'GPU')
@@ -31,7 +31,7 @@ train_img_dir = os.path.join(coco_root, 'train2017')
 ann_file = os.path.join(coco_root, 'annotations/instances_train2017.json')
 
 if __name__ == '__main__':
-    batch_size = 4
+    batch_size = 2
     ds_train = create_dataset(
         ann_file=ann_file,
         img_dir=train_img_dir,
@@ -60,12 +60,12 @@ if __name__ == '__main__':
             d0 = time.time() - t_0
             d1 = time.time() - t_1
             print(f'epoch {epoch}, step {step}, '
-                  f'loss_objectness: {loss["loss_objectness"]:.4f}, '
-                  f'loss_rpn_box_reg: {loss["loss_rpn_box_reg"]:.4f}, '
-                  f'loss_class: {loss["loss_class"]:.4f}, '
-                  f'loss_box_reg: {loss["loss_box_reg"]:.4f}, '
-                  f'loss_mask: {loss["loss_mask"]:.4f}, '
-                  f'loss_total: {loss["loss_total"]:.4f}, '
+                  f'l_objectness: {loss["loss_objectness"]:.4f}, '
+                #   f'l_rpn_box_reg: {loss["loss_rpn_box_reg"]:.4f}, '
+                #   f'l_class: {loss["loss_class"]:.4f}, '
+                #   f'l_box_reg: {loss["loss_box_reg"]:.4f}, '
+                #   f'l_mask: {loss["loss_mask"]:.4f}, '
+                  f'l_total: {loss["loss_total"]:.4f}, '
                   f'setp_t: {d1:.2f}s, '
                   f'total_t: {d0:.2f}s'
             )

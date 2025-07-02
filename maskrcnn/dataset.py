@@ -50,8 +50,10 @@ def load_image_info(coco, img_ids, img_dir):
                 category_ids.append(annotation['category_id'])
                 
                 # bboxes handling
+                # a bbox: [x1, y1, x2, y2]
                 x, y, w, h = annotation['bbox']
                 bboxes.append([x, y, x+w, y+h])
+                
                 # segmentation handling
                 rle = rle_from_seg(annotation['segmentation'], 
                                    height, width)

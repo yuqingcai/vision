@@ -66,9 +66,11 @@ class ROIBBoxHead(layers.Layer):
             bbox_deltas = bbox_deltas.to_tensor()
         bbox_deltas = tf.gather(bbox_deltas, indices)
 
-        tf.print(
-            'bbox_deltas shape:', tf.shape(bbox_deltas)
-        )
+
+        # tf.print(
+        #     'ROIBBoxHead',
+        #     'bbox_deltas:', tf.shape(bbox_deltas)
+        # )
 
         return bbox_deltas
     
