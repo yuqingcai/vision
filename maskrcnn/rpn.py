@@ -17,21 +17,15 @@ class AnchorGenerator(layers.Layer):
         ratios = tf.constant(ratios, dtype=tf.float32)
         scales = tf.constant(scales, dtype=tf.float32)
 
-        # tf.print(
-        #         'AnchorGenerator',
-        #         'image_sizes:', tf.shape(image_sizes)
-        # )
-        
         if len(feature_maps) != len(strides) or \
            len(feature_maps) != len(base_sizes):
             raise ValueError("feature_maps, strides, and base_sizes must have the same length.")
         
         anchors = []
-        batch_indices = []
         for feature_map, stride, base_size in \
             zip(feature_maps, strides, base_sizes):
             
-            anchors_feature_map = tf.map_fn(
+            anchors_fm = tf.map_fn(
                 lambda args: self.generate(
                     args[0], args[1], ratios, scales, stride, base_size,
                 ),
@@ -42,26 +36,13 @@ class AnchorGenerator(layers.Layer):
                 ),
                 parallel_iterations=32
             )
-            anchors.append(anchors_feature_map)
-            batch_size = tf.shape(anchors_feature_map)[0]
-            num_anchors = tf.shape(anchors_feature_map)[1]
-            batch_idx = tf.repeat(tf.range(batch_size), num_anchors)
-            batch_indices.append(batch_idx)
+            # anchors_fm shape is [B, Ni, 4]
+            anchors.append(anchors_fm)
         
-        # flatten anchors: [B, N, 4] -> [B*N, 4]
-        # concat batch indices: [B*N]
-        anchors_flatten = tf.concat(
-            [ tf.reshape(a, [-1, 4]) for a in anchors ], axis=0
-        )
-        batch_indices = tf.concat(batch_indices, axis=0)
-
-        # tf.print(
-        #         'AnchorGenerator',
-        #         'anchors:', tf.shape(anchors_flatten),
-        #         'batch_indices:', tf.shape(batch_indices)
-        # )
-
-        return anchors_flatten, batch_indices
+        # anchors: list of [B, Ni, 4] -> [B, N, 4]
+        anchors = tf.concat(anchors, axis=1)
+        
+        return anchors
     
     def generate(self, 
                  feature_map, 
@@ -119,6 +100,9 @@ class AnchorGenerator(layers.Layer):
             tf.clip_by_value(anchors[:, 2], 0, width - 1),
             tf.clip_by_value(anchors[:, 3], 0, height - 1)
         ], axis=1)
+        
+        tf.print('AnchorGenerator',
+                'batch anchors :', tf.shape(anchors))
         
         return anchors
 
