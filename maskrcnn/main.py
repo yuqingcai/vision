@@ -38,7 +38,7 @@ if __name__ == '__main__':
         batch_size=batch_size,
         shuffle=False,
         min_size=200,   # 800
-        max_size=200    # 1333
+        max_size=400    # 1333
     )
     
     model = MaskRCNN(
@@ -61,7 +61,7 @@ if __name__ == '__main__':
             d1 = time.time() - t_1
             print(f'epoch {epoch}, step {step}, '
                   f'l_objectness: {loss["loss_objectness"]:.4f}, '
-                #   f'l_rpn_box_reg: {loss["loss_rpn_box_reg"]:.4f}, '
+                  f'l_rpn_box_reg: {loss["loss_rpn_box_reg"]:.4f}, '
                 #   f'l_class: {loss["loss_class"]:.4f}, '
                 #   f'l_box_reg: {loss["loss_box_reg"]:.4f}, '
                 #   f'l_mask: {loss["loss_mask"]:.4f}, '

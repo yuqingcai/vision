@@ -28,6 +28,8 @@ class MaskRCNN(Model):
         self.anchor_scales = [1.0, 1.5, 2.0]
         self.fpn_feature_size = 256
         self.class_num = 80  # COCO dataset has 80 classes
+        self.pre_nms_topk = 6000
+        self.post_nms_topk = 1000
         
         self.fpn = FPNGenerator(feature_size=self.fpn_feature_size)
 
@@ -39,8 +41,8 @@ class MaskRCNN(Model):
             feature_size=self.fpn_feature_size)
         
         self.proposal_generator = ProposalGenerator(
-            pre_nms_topk=6000,
-            post_nms_topk=1000,
+            pre_nms_topk=self.pre_nms_topk,
+            post_nms_topk=self.post_nms_topk,
             nms_thresh=0.5,
             min_size=16
         )
@@ -121,26 +123,26 @@ class MaskRCNN(Model):
             image_sizes=image_sizes
         )
         
-        # rpn_objectness_logits, rpn_bbox_deltas = self.rpn_head(
-        #     [p2, p3, p4, p5], training=training)
+        rpn_objectness_logits, rpn_bbox_deltas = self.rpn_head(
+            [p2, p3, p4, p5], training=training)
         
-        # proposals, \
-        # batch_indices, \
-        # rpn_objectness_logits, \
-        # rpn_bbox_deltas = self.proposal_generator(
-        #     anchors, 
-        #     batch_indices, 
-        #     image_sizes, 
-        #     rpn_objectness_logits, 
-        #     rpn_bbox_deltas
-        # )
+        proposals, \
+        rpn_objectness_logits, \
+        rpn_bbox_deltas, \
+        valid_mask = self.proposal_generator(
+            anchors, 
+            image_sizes, 
+            rpn_objectness_logits, 
+            rpn_bbox_deltas
+        )
         
-        # # roi class and bbox head
-        # features = self.roi_align(
-        #     feature_maps=[p2, p3, p4, p5], 
-        #     rois=proposals,
-        #     batch_indices=batch_indices
-        # )
+        # roi class and bbox head
+        features = self.roi_align(
+            feature_maps=[p2, p3, p4, p5], 
+            rois=proposals,
+            valid_mask=valid_mask,
+            roi_size_pred=self.post_nms_topk
+        )
 
         # class_logits = self.classifier_head(
         #     features, 
@@ -171,21 +173,12 @@ class MaskRCNN(Model):
                 info = tf.config.experimental.get_memory_info('GPU:0')
                 print("After backbone, GPU memory:", info)
 
-        # return (
-        #     proposals, 
-        #     batch_indices, 
-        #     rpn_objectness_logits, 
-        #     rpn_bbox_deltas,
-        #     class_logits, 
-        #     bbox_deltas, 
-        #     masks, 
-        # )
 
         return (
-            None, 
-            None, 
-            None, 
-            None,
+            proposals, 
+            valid_mask,
+            rpn_objectness_logits, 
+            rpn_bbox_deltas,
             None, 
             None, 
             None, 
@@ -206,68 +199,68 @@ class MaskRCNN(Model):
         with tf.GradientTape() as tape:
 
             proposals, \
-            batch_indices, \
+            valid_mask, \
             rpn_objectness_logits, \
             rpn_bbox_deltas, \
             class_logits, \
             bbox_deltas, \
             masks = self.call(images, sizes, training=True)
             
-            # loss_objectness = loss_objectness_fn(
-            #     proposals,
-            #     batch_indices,
-            #     rpn_objectness_logits,
-            #     gt_bboxes
-            # )
-
-            # loss_rpn_box_reg = loss_rpn_box_reg_fn(
-            #     proposals,
-            #     batch_indices,
-            #     rpn_bbox_deltas,
-            #     gt_bboxes
-            # )
+            loss_objectness = loss_objectness_fn(
+                proposals,
+                valid_mask,
+                rpn_objectness_logits,
+                gt_bboxes
+            )
+            
+            loss_rpn_box_reg = loss_rpn_box_reg_fn(
+                proposals,
+                valid_mask,
+                rpn_bbox_deltas,
+                gt_bboxes
+            )
 
             # loss_class = loss_class_fn(
-            #     proposals, class_logits, gt_class_ids, gt_bboxes)
-            # loss_box_reg = loss_bbox_reg_fn(
-            #     proposals, bbox_deltas, gt_bboxes
+            #     proposals, 
+            #     class_logits, 
+            #     gt_class_ids, 
+            #     gt_bboxes
             # )
+
+            # loss_box_reg = loss_bbox_reg_fn(
+            #     proposals, 
+            #     bbox_deltas, 
+            #     gt_bboxes
+            # )
+
             # loss_mask = loss_mask_fn(
             #     proposals,
             #     masks, 
             #     gt_masks
             # )
 
-            # loss_total = loss_objectness
+            loss_total = loss_objectness + loss_rpn_box_reg
 
-        # grads = tape.gradient(loss_total, self.trainable_variables)
-        # self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+        grads = tape.gradient(loss_total, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
         
         # Update metrics
-        # self.loss_objectness_tracker.update_state(loss_objectness)
-        # self.loss_rpn_box_reg_tracker.update_state(loss_rpn_box_reg)
+        self.loss_objectness_tracker.update_state(loss_objectness)
+        self.loss_rpn_box_reg_tracker.update_state(loss_rpn_box_reg)
         # self.loss_class_tracker.update_state(loss_class)
         # self.loss_box_reg_tracker.update_state(loss_box_reg)
         # self.loss_mask_tracker.update_state(loss_mask)
-        # self.loss_total_tracker.update_state(loss_total)
+        self.loss_total_tracker.update_state(loss_total)
         
-        # return {
-        #     'loss_objectness': self.loss_objectness_tracker.result(),
-        #     'loss_rpn_box_reg': self.loss_rpn_box_reg_tracker.result(),
+        return {
+            'loss_objectness': self.loss_objectness_tracker.result(),
+            'loss_rpn_box_reg': self.loss_rpn_box_reg_tracker.result(),
         #     'loss_class': self.loss_class_tracker.result(),
         #     'loss_box_reg': self.loss_box_reg_tracker.result(),
         #     'loss_mask': self.loss_mask_tracker.result(),
-        #     'loss_total': self.loss_total_tracker.result(),
-        # }
-
-        return {
-            'loss_objectness': 0.0,
-            'loss_rpn_box_reg': 0.0,
-            'loss_class': 0.0,
-            'loss_box_reg': 0.0,
-            'loss_mask': 0.0,
-            'loss_total': 0.0,
+            'loss_total': self.loss_total_tracker.result(),
         }
+
 
     def reset_metrics(self):
         self.loss_objectness_tracker.reset_states()

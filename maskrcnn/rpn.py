@@ -26,7 +26,7 @@ class AnchorGenerator(layers.Layer):
             zip(feature_maps, strides, base_sizes):
             
             anchors_fm = tf.map_fn(
-                lambda args: self.generate(
+                lambda args: self.anchors_per_feature_map(
                     args[0], args[1], ratios, scales, stride, base_size,
                 ),
                 elems=(feature_map, image_sizes),
@@ -42,15 +42,18 @@ class AnchorGenerator(layers.Layer):
         # anchors: list of [B, Ni, 4] -> [B, N, 4]
         anchors = tf.concat(anchors, axis=1)
         
+        # tf.print('AnchorGenerator',
+        #         'anchors :', tf.shape(anchors))
         return anchors
     
-    def generate(self, 
-                 feature_map, 
-                 image_size, 
-                 ratios, 
-                 scales, 
-                 stride, 
-                 base_size):
+    def anchors_per_feature_map(
+            self, 
+            feature_map, 
+            image_size, 
+            ratios, 
+            scales, 
+            stride, 
+            base_size):
         
         # generate base anchors
         base_size = tf.cast(base_size, tf.float32)
@@ -101,9 +104,6 @@ class AnchorGenerator(layers.Layer):
             tf.clip_by_value(anchors[:, 3], 0, height - 1)
         ], axis=1)
         
-        tf.print('AnchorGenerator',
-                'batch anchors :', tf.shape(anchors))
-        
         return anchors
 
 
@@ -127,35 +127,34 @@ class RPNHead(layers.Layer):
 
         for feature_map in feature_maps:
             x = self.conv(feature_map)
-            objectness_feature_map = self.objectness_logits(x)
-            bbox_deltas_feature_map = self.bbox_deltas(x)
+            objectness_fm = self.objectness_logits(x)
+            bbox_deltas_fm = self.bbox_deltas(x)
 
-            # reshape objectness_feature_map from 
+            # reshape objectness_fm from 
             # [B, H, W, anchors_per_location] to [B, N, 1]
-            objectness_feature_map = tf.reshape(
-                objectness_feature_map, 
-                [ tf.shape(objectness_feature_map)[0], -1, 1]
+            objectness_fm = tf.reshape(
+                objectness_fm, 
+                [ tf.shape(objectness_fm)[0], -1, 1]
             )
             
-            # reshape bbox_deltas_feature_map from 
+            # reshape bbox_deltas_fm from 
             # [B, H, W, anchors_per_location * 4] to [B, N, 4]
-            bbox_deltas_feature_map = tf.reshape(
-                bbox_deltas_feature_map, 
-                [ tf.shape(bbox_deltas_feature_map)[0], -1, 4]
+            bbox_deltas_fm = tf.reshape(
+                bbox_deltas_fm, 
+                [ tf.shape(bbox_deltas_fm)[0], -1, 4]
             )
 
-            objectness_logits.append(objectness_feature_map)
-            bbox_deltas.append(bbox_deltas_feature_map)
+            objectness_logits.append(objectness_fm)
+            bbox_deltas.append(bbox_deltas_fm)
 
-        # flatten objectness_logits and bbox_deltas
-        # objectness_logits shape [B, N, 1] -> [B*N, 1]
-        # bbox_deltas shape [B, N, 4] -> [B*N, 4]
-        objectness_logits = tf.concat(
-            [ tf.reshape(a, [-1, 1]) for a in objectness_logits ], axis=0
-        )
-        bbox_deltas = tf.concat(
-            [ tf.reshape(a, [-1, 4]) for a in bbox_deltas ], axis=0
-        )
+        objectness_logits = tf.concat(objectness_logits, axis=1)
+        bbox_deltas = tf.concat(bbox_deltas, axis=1)
+        
+        # tf.print(
+        #     'RPNHead',
+        #     'objectness_logits :', tf.shape(objectness_logits),
+        #     'bbox_deltas :', tf.shape(bbox_deltas)
+        # )
         
         return objectness_logits, bbox_deltas
 
@@ -169,36 +168,25 @@ class ProposalGenerator(layers.Layer):
         self.nms_thresh = nms_thresh
         self.min_size = min_size
     
-    def call(self, anchors, batch_indices, image_sizes,   
-             objectness_logits, bbox_deltas):
-            
-        image_sizes = tf.gather(image_sizes, batch_indices)
-        batch_size = tf.reduce_max(batch_indices) + 1
-
+    def call(self, anchors, image_sizes, objectness_logits, bbox_deltas):
+        
         # select top-k proposals per image
-        def topk_proposals_per_image(index):
-            mask = tf.equal(batch_indices, index)
-            anchors_selected = tf.boolean_mask(anchors, mask)
-            objectness_logits_selected = tf.boolean_mask(
-                objectness_logits, mask
-            )
-            bbox_deltas_selected = tf.boolean_mask(bbox_deltas, mask)
-            image_sizes_selected = tf.boolean_mask(image_sizes, mask)
-
+        def topk_per_image(anchors, image_size, objectness_logits, bbox_deltas):
+            
             # decode bbox
             # a_x, a_y are the center coordinates of the anchors
             # a_w, a_h are the width and height of the anchors
-            a_w = anchors_selected[:, 2] - anchors_selected[:, 0]
-            a_h = anchors_selected[:, 3] - anchors_selected[:, 1]
-            a_x = anchors_selected[:, 0] + 0.5 * a_w
-            a_y = anchors_selected[:, 1] + 0.5 * a_h
+            a_w = anchors[:, 2] - anchors[:, 0]
+            a_h = anchors[:, 3] - anchors[:, 1]
+            a_x = anchors[:, 0] + 0.5 * a_w
+            a_y = anchors[:, 1] + 0.5 * a_h
 
             # t_x, t_y are the offsets to the center coordinates
             # t_w, t_h are the log-scaled width and height
-            t_x = bbox_deltas_selected[:, 0]
-            t_y = bbox_deltas_selected[:, 1]
-            t_w = bbox_deltas_selected[:, 2]
-            t_h = bbox_deltas_selected[:, 3]
+            t_x = bbox_deltas[:, 0]
+            t_y = bbox_deltas[:, 1]
+            t_w = bbox_deltas[:, 2]
+            t_h = bbox_deltas[:, 3]
 
             # p_x, p_y are the predicted center coordinates
             # p_w, p_h are the predicted width and height
@@ -217,13 +205,13 @@ class ProposalGenerator(layers.Layer):
             proposals = tf.stack([x_1, y_1, x_2, y_2], axis=1)
 
             # clip proposals to the image size
-            heights = tf.cast(image_sizes_selected[:, 0], tf.float32)
-            widths  = tf.cast(image_sizes_selected[:, 1], tf.float32)
+            height = tf.cast(image_size[0], tf.float32)
+            width  = tf.cast(image_size[1], tf.float32)
             proposals = tf.stack([
-                tf.clip_by_value(proposals[:, 0], 0, widths - 1),
-                tf.clip_by_value(proposals[:, 1], 0, heights - 1),
-                tf.clip_by_value(proposals[:, 2], 0, widths - 1),
-                tf.clip_by_value(proposals[:, 3], 0, heights - 1)
+                tf.clip_by_value(proposals[:, 0], 0, width - 1),
+                tf.clip_by_value(proposals[:, 1], 0, height - 1),
+                tf.clip_by_value(proposals[:, 2], 0, width - 1),
+                tf.clip_by_value(proposals[:, 3], 0, height - 1)
             ], axis=1)
 
             # remove small boxes
@@ -233,11 +221,10 @@ class ProposalGenerator(layers.Layer):
 
             # update proposals, objectness_logits and bbox_deltas
             proposals = tf.gather(proposals, valid[:, 0])
-            objectness_logits_selected = tf.gather(
-                objectness_logits_selected, valid[:, 0])
-            bbox_deltas_selected = tf.gather(bbox_deltas_selected, valid[:, 0])
+            objectness_logits = tf.gather(objectness_logits, valid[:, 0])
+            bbox_deltas = tf.gather(bbox_deltas, valid[:, 0])
 
-            fg_scores = tf.sigmoid(objectness_logits_selected[:, 0])
+            fg_scores = tf.sigmoid(objectness_logits[:, 0])
             # get tok-k pre nms proposals
             top_k = tf.math.top_k(
                 fg_scores, 
@@ -246,12 +233,8 @@ class ProposalGenerator(layers.Layer):
             
             # update proposals, objectness_logits, bbox_deltas and fg_scores
             proposals = tf.gather(proposals, top_k.indices)
-            objectness_logits_selected = tf.gather(
-                objectness_logits_selected, top_k.indices
-            )
-            bbox_deltas_selected = tf.gather(
-                bbox_deltas_selected, top_k.indices
-            )
+            objectness_logits = tf.gather(objectness_logits, top_k.indices)
+            bbox_deltas = tf.gather(bbox_deltas, top_k.indices)
             fg_scores = tf.gather(fg_scores, top_k.indices)
 
             # apply non-maximum suppression (NMS)
@@ -263,69 +246,53 @@ class ProposalGenerator(layers.Layer):
             )
 
             # update proposals, objectness_logits, and bbox_deltas
-            # create proposals_batch_indices
             proposals = tf.gather(proposals, keep)
-            proposal_bis = tf.fill([tf.shape(proposals)[0]], index)
-            objectness_logits_selected = tf.gather(
-                objectness_logits_selected, keep
-            )
-            bbox_deltas_selected = tf.gather(bbox_deltas_selected, keep)
+            objectness_logits = tf.gather(objectness_logits, keep)
+            bbox_deltas = tf.gather(bbox_deltas, keep)
             
-            # tf.print(
-            #     'ProposalGenerator topk_proposals_per_image',
-            #     'proposals:', tf.shape(proposals),
-            #     'proposal_bis:', tf.shape(proposal_bis),
-            #     'objectness_logits:', tf.shape(objectness_logits_selected),
-            #     'bbox_deltas:', tf.shape(bbox_deltas_selected)
-            # )
+            # pad proposals, objectness_logits and bbox_deltas to post_nms_topk
+            n = tf.shape(proposals)[0]
+            pad = self.post_nms_topk - n
 
-            return tf.RaggedTensor.from_tensor(proposals), \
-                proposal_bis,\
-                tf.RaggedTensor.from_tensor(objectness_logits_selected), \
-                tf.RaggedTensor.from_tensor(bbox_deltas_selected)
+            if pad > 0:
+                proposals = tf.pad(
+                    proposals, 
+                    [[0, pad], [0, 0]], 
+                    constant_values=0.0
+                )
+                objectness_logits = tf.pad(
+                    objectness_logits, 
+                    [[0, pad], [0, 0]], 
+                    constant_values=1e-8
+                )
+                bbox_deltas = tf.pad(
+                    bbox_deltas, 
+                    [[0, pad], [0, 0]], 
+                    constant_values=0.0
+                )
+
+            return proposals, objectness_logits, bbox_deltas, \
+                tf.range(self.post_nms_topk) < n
         
         results = tf.map_fn(
-            topk_proposals_per_image,
-            tf.range(batch_size),
+            lambda args: topk_per_image(args[0], args[1], args[2], args[3]),
+            elems=(anchors, image_sizes, objectness_logits, bbox_deltas),
             fn_output_signature=(
-                tf.RaggedTensorSpec(shape=(None, 4), dtype=tf.float32),
-                tf.RaggedTensorSpec(shape=(None,), dtype=tf.int32),
-                tf.RaggedTensorSpec(shape=(None, 1), dtype=tf.float32),
-                tf.RaggedTensorSpec(shape=(None, 4), dtype=tf.float32)
+                tf.TensorSpec(shape=(self.post_nms_topk, 4), dtype=tf.float32),
+                tf.TensorSpec(shape=(self.post_nms_topk, 1), dtype=tf.float32),
+                tf.TensorSpec(shape=(self.post_nms_topk, 4), dtype=tf.float32),
+                tf.TensorSpec(shape=(self.post_nms_topk, ), dtype=tf.bool),
             )
         )
 
-        # proposals shape: [B, (None), 4]
-        # batch_indices shape: [B, (None)]
-        # objectness_logits shape: [B, (None), 1]
-        # bbox_deltas shape: [B, (None), 4]
-        # where (None) is the number of proposals for each image
-        # in the batch, which can vary
-        proposals, batch_indices, objectness_logits, bbox_deltas = results
+        # proposals, objectness_logits, bbox_deltas, valid_mask = results
+        # tf.print(
+        #     'ProposalGenerator',
+        #     'proposals :', tf.shape(proposals),
+        #     'objectness_logits :', tf.shape(objectness_logits),
+        #     'bbox_deltas :', tf.shape(bbox_deltas),
+        #     'valid_mask :', tf.shape(valid_mask)
+        # )
 
-        # flatten proposals, batch_indices, objectness_logits, and bbox_deltas
-        # to make them compatible with the rest of the model
-        # 
-        # proposals shape: [B, (None), 4] -> [B*(None), 4]
-        # batch_indices shape: [B, (None)] -> [B*(None)]
-        # objectness_logits shape: [B, (None), 1] -> [B*(None), 1]
-        # bbox_deltas shape: [B, (None), 4] -> [B*(None), 4]
-        # 
-        proposals = proposals.merge_dims(0, 1)
-        if isinstance(proposals, tf.RaggedTensor):
-            proposals = proposals.to_tensor()
-
-        batch_indices = batch_indices.merge_dims(0, 1)
-        if isinstance(batch_indices, tf.RaggedTensor):
-            batch_indices = batch_indices.to_tensor()
-
-        objectness_logits = objectness_logits.merge_dims(0, 1)
-        if isinstance(objectness_logits, tf.RaggedTensor):
-            objectness_logits = objectness_logits.to_tensor()
-
-        bbox_deltas = bbox_deltas.merge_dims(0, 1)
-        if isinstance(bbox_deltas, tf.RaggedTensor):
-            bbox_deltas = bbox_deltas.to_tensor()
-        
-        return proposals, batch_indices, objectness_logits, bbox_deltas
+        return results
     

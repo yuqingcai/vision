@@ -311,8 +311,6 @@ class ProposalGenerator(layers.Layer):
 
         return proposals, batch_indices, class_logits, bbox_deltas
 
-
-
        shape = tf.shape(features)
         feature_dim = shape[1] * shape[2] * shape[3]
         # flatten features to shape [ N, feature_dim ]
@@ -323,3 +321,134 @@ class ProposalGenerator(layers.Layer):
         
         tf.print('bbox_deltas shape:', tf.shape(bbox_deltas))
         return bbox_deltas
+
+
+class ROIAlign(layers.Layer):
+    def __init__(self, output_size, sampling_ratio, 
+                 feature_strides, feature_size, **kwargs):
+        super().__init__(**kwargs)
+        self.output_size = output_size
+        self.sampling_ratio = sampling_ratio
+        self.feature_strides = feature_strides
+        self.feature_size = feature_size
+
+    def call(self, feature_maps, rois, valid_mask, pre_proposal_size):
+        """
+            feature_maps is a list of feature map, each feature map is 
+            a [B, H, W, C] tensor.
+            rois is a [B, N, 4] tensor, where each row is [x1, y1, x2, y2]
+            calculate roi_level, it is used to select the feature map.
+            roi_level is determined by the size of the roi, the range 
+            is [2, 5] corresponding P2, P3, P4 and P5 feature maps.
+            small rois are assigned to P2, large rois are assigned to P5.
+            roi_level shape is [N, 1], where N is the number of rois.
+        """
+        tf.print('ROIAlign rois:', tf.shape(rois))
+
+
+        features = tf.map_fn(
+            lambda args: self.roi_align_per_image(
+                args[0], args[1], args[2]
+            ),
+            elems=(feature_maps, rois, valid_mask),
+            fn_output_signature=tf.TensorSpec(
+                shape=(pre_proposal_size, 
+                       self.output_size, 
+                       self.output_size, 
+                       self.feature_size), 
+                dtype=tf.float32
+            )
+        )
+
+
+        
+        x1, y1, x2, y2 = tf.split(rois, 4, axis=1)
+        roi_h = y2 - y1
+        roi_w = x2 - x1
+        roi_area = roi_h * roi_w
+        levels = tf.math.log(tf.sqrt(roi_area) / 224.0) / \
+            tf.math.log(2.0) + 4.0
+        levels = tf.squeeze(levels, axis=1)
+        levels = tf.clip_by_value(tf.cast(tf.round(levels), tf.int32), 2, 5)
+        
+        all_features = []
+        all_indices = []
+
+        for i, stride in enumerate(self.feature_strides):
+            # i + 2 because level starts from 2 and 
+            # feature_maps index starts from 0
+            level = i + 2
+            mask = tf.equal(levels, level)
+            rois_selected = tf.boolean_mask(rois, mask)
+            roi_indices = tf.boolean_mask(
+                tf.range(tf.shape(rois)[0]), mask
+            )
+
+            features = tf.cond(
+                tf.shape(rois_selected[0]) > 0,
+                lambda: self.with_features(
+                    rois_selected, 
+                    roi_indices, 
+                    feature_maps[i], 
+                    stride, 
+                    self.output_size
+                ),
+                lambda: self.no_features(
+                    rois_selected,
+                    self.output_size, 
+                    self.feature_size
+                )
+            )
+            
+            all_features.append(features)
+            all_indices.append(roi_indices)
+
+        # sort all indices to maintain the order of rois
+        indices = tf.argsort(tf.concat(all_indices, axis=0), axis=0)
+
+        features = tf.gather(tf.concat(all_features, axis=0), indices)
+        
+        tf.debugging.assert_equal(
+            tf.shape(features)[0], tf.shape(rois)[0],
+            message="roi features batch size does not match rois batch size"
+        )
+
+        return features
+    
+    def with_features(self, rois, roi_indices, feature_maps, 
+                      stride, output_size):
+                
+        # select the feature map for the current level then
+        # normalized roi box to [0, 1], order is [y1, x1, y2, x2]
+        # feature_maps shape: [B, H, W, C]
+        feature_maps = tf.gather(feature_maps, roi_batch_indices)
+        scale = 1.0 / stride
+        bboxes = rois * scale
+        fm_heights = tf.cast(tf.shape(feature_maps)[1], dtype=tf.float32)
+        fm_widths = tf.cast(tf.shape(feature_maps)[2], dtype=tf.float32)
+        x1 = bboxes[:, 0] / fm_widths
+        y1 = bboxes[:, 1] / fm_heights
+        x2 = bboxes[:, 2] / fm_widths
+        y2 = bboxes[:, 3] / fm_heights
+        normalized_boxes = tf.stack([y1, x1, y2, x2], axis=1)
+        bbox_indices = tf.range(tf.shape(rois)[0])
+
+        # features shape: [M, output_size, output_size, C]
+        features = tf.image.crop_and_resize(
+            feature_maps,       # [M, H, W, C]
+            normalized_boxes,   # [M, 4], each row is [y1, x1, y2, x2]
+            bbox_indices,       # [M]
+            crop_size=[output_size, output_size],
+            method="bilinear"
+        )
+        
+        return features, roi_indices
+        
+    def no_features(self, rois, output_size, feature_size):
+        return (
+            tf.zeros(
+                [ 0, output_size, output_size, feature_size ], 
+                dtype=tf.float32
+            ),
+            tf.zeros([0], dtype=tf.int32)
+        )
