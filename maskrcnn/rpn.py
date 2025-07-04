@@ -27,7 +27,8 @@ class AnchorGenerator(layers.Layer):
             
             anchors_fm = tf.map_fn(
                 lambda args: self.anchors_per_feature_map(
-                    args[0], args[1], ratios, scales, stride, base_size,
+                    args[0], args[1], ratios, scales, stride, 
+                    base_size,
                 ),
                 elems=(feature_map, image_sizes),
                 fn_output_signature=tf.TensorSpec(

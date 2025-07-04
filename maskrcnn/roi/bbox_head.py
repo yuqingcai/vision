@@ -7,71 +7,73 @@ class ROIBBoxHead(layers.Layer):
         self.num_classes = num_classes
         self.fc1 = layers.Dense(hidden_dim, activation='relu')
         self.fc2 = layers.Dense(hidden_dim, activation='relu')
-        self.bbox_pred = layers.Dense(
-            self.num_classes * 4, activation=None
-        )
+        self.bbox_pred = layers.Dense(self.num_classes * 4, activation=None)
 
-    def call(self, features, batch_indices):
+    def call(self, features, valid_mask, features_size_pred):
         """
-            features shape: [N, sample_size, sample_size, feature_size]
+            features shape: [B, N, S, S, F]
+            valid_mask shape: [B, N]
+            where B is batch size, N is number of ROIs,
+            S is the size of the ROI (e.g., 7 for 7x7),
+            and F is the feature dimension (e.g., 256).
+            features_size_pred is the number of predicted bounding 
+            boxes per image.
         """
-        batch_size = tf.reduce_max(batch_indices) + 1
 
-        def bbox_deltas_per_image(index):
-            mask = tf.equal(batch_indices, index)
-            features_per_image = tf.boolean_mask(features, mask)
-            features_indices = tf.boolean_mask(
-                tf.range(tf.shape(features)[0]), mask
+        def bbox_deltas_per_image(features, valid_mask):
+            features_valid = tf.boolean_mask(features, valid_mask)
+            valid_indices = tf.boolean_mask(
+                tf.range(tf.shape(features)[0]), 
+                valid_mask
+            )
+
+            pad_indices = tf.boolean_mask(
+                tf.range(tf.shape(features)[0]), 
+                tf.logical_not(valid_mask)
             )
 
             # flatten features to shape [ M, feature_dim ]
-            shape = tf.shape(features_per_image)
+            shape = tf.shape(features_valid)
             feature_dim = shape[1] * shape[2] * shape[3]
-            x = tf.reshape(features_per_image, [ -1,  feature_dim ])
+            x = tf.reshape(features_valid, [ -1,  feature_dim ])
             x = self.fc1(x)
             x = self.fc2(x)
             bbox_deltas = self.bbox_pred(x)
 
-            # bbox_deltas shape: [M, num_classes * 4]
-            # features_indices shape: [M]
-            return tf.RaggedTensor.from_tensor(bbox_deltas), \
-                features_indices
+            bbox_deltas = tf.pad(
+                bbox_deltas, 
+                [[0, tf.shape(pad_indices)[0]], [0, 0]], 
+                constant_values=0.0
+            )
 
+            indices = tf.concat([valid_indices, pad_indices], axis=0)
+            indices_sorted = tf.argsort(indices, axis=0)
+            bbox_deltas = tf.gather(bbox_deltas, indices_sorted)
+
+            # bbox_deltas shape: [M, num_classes * 4]
+            return bbox_deltas
+        
         results = tf.map_fn(
-            bbox_deltas_per_image,
-            tf.range(batch_size),
+            lambda args: bbox_deltas_per_image(
+                args[0], 
+                args[1]
+            ),
+            elems=(
+                features, 
+                valid_mask
+            ),
             fn_output_signature=(
-                tf.RaggedTensorSpec(
-                    shape=(None, self.num_classes*4), 
+                tf.TensorSpec(
+                    shape=(
+                        features_size_pred, 
+                        self.num_classes*4
+                    ), 
                     dtype=tf.float32
-                ),
-                tf.RaggedTensorSpec(
-                    shape=(None,), 
-                    dtype=tf.int32
                 )
             )
         )
-        
-        bbox_deltas, indices = results
 
-        # sort all indices to maintain the order of features
-        indices = indices.merge_dims(0, 1)
-        if isinstance(indices, tf.RaggedTensor):
-            indices = indices.to_tensor()
-        indices = tf.argsort(indices, axis=0)
-        
-        # bbox_deltas shape: [ M, num_classes * 4 ]
-        bbox_deltas = bbox_deltas.merge_dims(0, 1)
-        if isinstance(bbox_deltas, tf.RaggedTensor):
-            bbox_deltas = bbox_deltas.to_tensor()
-        bbox_deltas = tf.gather(bbox_deltas, indices)
+        # tf.print('bbox_deltas:', tf.shape(results))
 
-
-        # tf.print(
-        #     'ROIBBoxHead',
-        #     'bbox_deltas:', tf.shape(bbox_deltas)
-        # )
-
-        return bbox_deltas
-    
-    
+        # results shape: [B, features_size_pred, num_classes * 4]
+        return results

@@ -10,7 +10,7 @@ import cv2
 import time
 
 
-def load_image_info(coco, img_ids, img_dir):
+def load_image_info(coco, img_ids, img_dir, id_to_index):
     print('loading image info from annotations...')
     time_0 = time.time()
 
@@ -35,7 +35,7 @@ def load_image_info(coco, img_ids, img_dir):
         
         # Collect all bounding boxes and class_ids
         bboxes = []
-        category_ids = []
+        labels = []
         rles = []
         for annotation in annotations:
             if annotation.get('iscrowd', 0) == 1:
@@ -47,7 +47,8 @@ def load_image_info(coco, img_ids, img_dir):
                 and 'segmentation' in annotation:
                 
                 # category_id handling
-                category_ids.append(annotation['category_id'])
+                class_index = id_to_index[annotation['category_id']]
+                labels.append(class_index)
                 
                 # bboxes handling
                 # a bbox: [x1, y1, x2, y2]
@@ -60,11 +61,11 @@ def load_image_info(coco, img_ids, img_dir):
                 rles.append(rle)
         
         # If no bounding boxes or category_ids, skip this image
-        if not bboxes or not category_ids or not rles:
+        if not bboxes or not labels or not rles:
             print(f"Warning: Annotation details not found for {file_path}.")
             continue
         
-        if len(bboxes) != len(category_ids) or len(bboxes) != len(rles):
+        if len(bboxes) != len(labels) or len(bboxes) != len(rles):
             print(f"Warning: Annotation details mismatch in {file_path}.")
             continue
         
@@ -72,7 +73,7 @@ def load_image_info(coco, img_ids, img_dir):
             'file_path' : file_path, 
             'size' :  (height, width), 
             'bbox' : bboxes,
-            'category_id' : category_ids,
+            'label' : labels,
             'rle' : rles, 
         })
 
@@ -251,8 +252,8 @@ def generator(entries):
                 entry['bbox'], 
                 dtype=tf.float32
             ),
-            'category_id': tf.constant(
-                entry['category_id'], 
+            'label': tf.constant(
+                entry['label'], 
                 dtype=tf.int32
             ),
             'rle': tf.constant(
@@ -319,11 +320,26 @@ def preprocess(batch, min_size, max_size):
     return batch
 
 
+def coco_category_id_index(coco):
+    categories = coco.dataset['categories']
+    cat_ids = [cat['id'] for cat in categories]
+    id_to_index = {
+        cat_id: idx + 1 for idx, cat_id in enumerate(cat_ids)
+    }
+
+    # background class
+    id_to_index[0] = 0
+    
+    return id_to_index
+
 def create_dataset(ann_file, img_dir, batch_size=4, shuffle=False, 
                    min_size=800, max_size=1333):
     coco = COCO(ann_file)
+
+    id_index = coco_category_id_index(coco)
+    
     img_ids = coco.getImgIds()
-    entries = load_image_info(coco, img_ids, img_dir)
+    entries = load_image_info(coco, img_ids, img_dir, id_index)
     
     ds = tf.data.Dataset.from_generator(
         functools.partial(generator, entries), 
@@ -343,7 +359,7 @@ def create_dataset(ann_file, img_dir, batch_size=4, shuffle=False,
                 dtype=tf.float32
             ),
 
-            'category_id': tf.TensorSpec(
+            'label': tf.TensorSpec(
                 shape=(None,), 
                 dtype=tf.int32
             ),
@@ -361,7 +377,12 @@ def create_dataset(ann_file, img_dir, batch_size=4, shuffle=False,
 
     ds = ds.ragged_batch(batch_size)
 
-    ds = ds.map(partial(preprocess, min_size=min_size, max_size=max_size), 
+    ds = ds.map(
+        partial(
+            preprocess, 
+            min_size=min_size, 
+            max_size=max_size
+        ), 
         num_parallel_calls=tf.data.AUTOTUNE)
     ds = ds.prefetch(tf.data.AUTOTUNE)
     return ds
