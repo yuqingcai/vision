@@ -37,14 +37,14 @@ def loss_class_spec_box_reg_fn(
         if tf.size(proposals_pos) == 0:
             return tf.constant(0.0, dtype=tf.float32)
 
-        bbox_deltas_pred_pos = tf.boolean_mask(
-            bbox_deltas_pred_valid, 
-            pos_mask
-        )
-        best_gt_inds_pos = tf.boolean_mask(best_gt_inds, pos_mask)# [M]
-        gt_boxes_pos = tf.gather(gt_bboxes_tensor, best_gt_inds_pos)# [M, 4]
-        proposals_labels = tf.gather(gt_labels, best_gt_inds_pos)    
-
+        # bbox_deltas_pred_pos = tf.boolean_mask(
+        #     bbox_deltas_pred_valid, 
+        #     pos_mask
+        # )
+        # best_gt_inds_pos = tf.boolean_mask(best_gt_inds, pos_mask)# [M]
+        # gt_boxes_pos = tf.gather(gt_bboxes_tensor, best_gt_inds_pos)# [M, 4]
+        # proposals_labels = tf.gather(gt_labels, best_gt_inds_pos)
+        
         # compute the target deltas
         px, py, pw, ph = (proposals_pos[:, 0] + proposals_pos[:, 2]) * 0.5, \
             (proposals_pos[:, 1] + proposals_pos[:, 3]) * 0.5, \

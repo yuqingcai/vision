@@ -292,7 +292,6 @@ class MaskRCNN(Model):
             'loss_total': self.loss_total_tracker.result(),
         }
 
-
     def reset_metrics(self):
         self.loss_rpn_objectness_reg_tracker.reset_states()
         self.loss_rpn_box_reg_tracker.reset_states()
