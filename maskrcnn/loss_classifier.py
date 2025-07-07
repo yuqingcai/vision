@@ -22,14 +22,15 @@ def loss_classifier_reg_fn(
             class_logits_pred, 
             valid_mask
         )
+        gt_boxes = gt_boxes.to_tensor()
 
          # Find the best matching ground truth for each proposal
-        ious = compute_iou(proposals_valid, gt_boxes.to_tensor())
+        ious = compute_iou(proposals_valid, gt_boxes)
         best_gt_inds = tf.argmax(ious, axis=1, output_type=tf.int32)
         best_gt_ious = tf.reduce_max(ious, axis=1)
         pos_mask = best_gt_ious >= iou_pos_thresh
         neg_mask = best_gt_ious < iou_neg_thresh
-
+        
         target_class = tf.zeros_like(best_gt_inds, dtype=tf.int32)
         pos_indices = tf.where(pos_mask)[:, 0]
         target_class_pos = tf.gather(
@@ -45,6 +46,7 @@ def loss_classifier_reg_fn(
         keep = tf.logical_or(pos_mask, neg_mask)
         keep_indices = tf.where(keep)[:, 0]
         if tf.size(keep_indices) == 0:
+            tf.print('No valid proposals found, classifier loss returning zero.')
             return tf.constant(0.0, dtype=tf.float32)
 
         sel_logits = tf.gather(class_logits_pred_valid, keep_indices)

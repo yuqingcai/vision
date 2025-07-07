@@ -56,8 +56,11 @@ def load_image_info(coco, img_ids, img_dir, id_to_index):
                 bboxes.append([x, y, x+w, y+h])
                 
                 # segmentation handling
-                rle = rle_from_seg(annotation['segmentation'], 
-                                   height, width)
+                rle = rle_from_seg(
+                    annotation['segmentation'], 
+                    height, 
+                    width
+                )
                 rles.append(rle)
         
         # If no bounding boxes or category_ids, skip this image
@@ -198,24 +201,30 @@ def resize_segmentations(segmentations, scale):
     return segmentations * tf.cast(scale, tf.float32)
 
 
-# rles contain a list RLE object of a picture
 def create_masks(rles, scale):
-
+    """
+        rles contain a list RLE object of a picture,
+        the data return is a list of masks,
+        each mask is a 2D array with shape (H, W),
+        where H and W are the height and width of the resized image.
+        The mask is resized to the same scale as the image.
+        The mask is a binary mask, where 1 means the object is present,
+        and 0 means the object is not present.
+    """
     def rle_to_mask(rle, scale):
         rle = json.loads(rle.numpy().decode('utf-8'))
         mask = maskUtils.decode(rle).astype(np.uint8)
-        new_height = int(mask.shape[0] * scale)
-        new_width = int(mask.shape[1] * scale)
 
-        # cv2 size is (WxH), so we need to swap width and height
+        new_height = int(round(mask.shape[0] * float(scale.numpy())))
+        new_width = int(round(mask.shape[1] * float(scale.numpy())))
+        
+        # cv2 size is (Width x Height)
         new_size = (new_width, new_height)
-        resized = cv2.resize(mask, 
-                            new_size, 
-                            interpolation=cv2.INTER_NEAREST)
-        return resized.astype(np.uint8)
 
-    def rle_to_mask_dummy(rle, scale):
-        return tf.constant([[1, 0],[0, 1]], dtype=np.uint8)
+        resized = cv2.resize(mask, 
+                             new_size, 
+                             interpolation=cv2.INTER_NEAREST)
+        return resized.astype(np.uint8)
 
     def rle_to_mask_wrap(rle, scale):
         mask = tf.py_function(
@@ -223,9 +232,9 @@ def create_masks(rles, scale):
             inp=[rle, scale],
             Tout=tf.uint8
         )
+
         return tf.RaggedTensor.from_tensor(mask)
     
-
     masks = tf.map_fn(
         lambda rle: rle_to_mask_wrap(rle, scale),
         rles,
@@ -302,7 +311,7 @@ def preprocess(batch, min_size, max_size):
             dtype=tf.float32
         )
     )
-    
+
     masks = tf.map_fn(
         lambda args: create_masks(args[0], args[1]),
         (batch['rle'], scales),
@@ -311,6 +320,7 @@ def preprocess(batch, min_size, max_size):
             dtype=tf.uint8
         )
     )
+
 
     batch['image'] = images
     batch['size'] = resizes

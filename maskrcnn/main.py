@@ -64,7 +64,7 @@ if __name__ == '__main__':
                   f'l_rpn_box_reg: {loss["loss_rpn_box_reg"]:.4f}, '
                   f'l_class: {loss["loss_class"]:.4f}, '
                   f'l_box_reg: {loss["loss_box_reg"]:.4f}, '
-                #   f'l_mask: {loss["loss_mask"]:.4f}, '
+                  f'l_mask: {loss["loss_mask"]:.4f}, '
                   f'l_total: {loss["loss_total"]:.4f}, '
                   f'setp_t: {d1:.2f}s, '
                   f'total_t: {d0:.2f}s'

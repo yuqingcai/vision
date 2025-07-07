@@ -1,7 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import layers
 
-
 class ROIMaskHead(layers.Layer):
     def __init__(self, 
                  num_classes, 
@@ -25,64 +24,81 @@ class ROIMaskHead(layers.Layer):
 
         self.resolution = roi_output_size * 2
 
-    def call(self, features, batch_indices):
+    def call(self, features, valid_mask, features_size_pred):
         """
-            features shape: [N, sample_size, sample_size, feature_size]
+            features shape: [B, N, S, S, F]
+            valid_mask shape: [B, N]
+            where B is batch size, N is number of ROIs,
+            S is the size of the ROI (e.g., 14 for 14x14),
+            and F is the feature dimension (e.g., 256).
+            features_size_pred is the number of predicted class 
+            logits per image.
         """
 
-        batch_size = tf.reduce_max(batch_indices) + 1
+        def masks_per_image(features, valid_mask):
+            features_valid = tf.boolean_mask(features, valid_mask)
+            valid_indices = tf.boolean_mask(
+                tf.range(tf.shape(features)[0]), 
+                valid_mask
+            )
 
-        def masks_per_image(index):
-            mask = tf.equal(batch_indices, index)
-            features_indices = tf.boolean_mask(
-                tf.range(tf.shape(features)[0]), mask
+            pad_indices = tf.boolean_mask(
+                tf.range(tf.shape(features)[0]), 
+                tf.logical_not(valid_mask)
             )
 
             # x shape [ M, H, W, C ]
-            x = tf.boolean_mask(features, mask)
+            x = features_valid
             for conv in self.conv_layers:
                 x = conv(x)
             x = self.upsample(x)
             masks = self.mask_pred(x)
 
-            # masks shape: [M, resolution, resolution, num_classes]
-            # features_indices shape: [M]
-            return tf.RaggedTensor.from_tensor(masks), \
-                features_indices
+            masks = tf.pad(
+                masks, 
+                [[0, tf.shape(pad_indices)[0]], [0, 0], [0, 0], [0, 0]], 
+                constant_values=0.0
+            )
+
+            indices = tf.concat([valid_indices, pad_indices], axis=0)
+            indices_sorted = tf.argsort(indices, axis=0)
+            masks = tf.gather(masks, indices_sorted)
+
+            # masks shape: [ M, resolution, resolution, num_classes ]
+            return masks
+
 
         results = tf.map_fn(
-            masks_per_image,
-            tf.range(batch_size),
+            lambda args: masks_per_image(
+                args[0], 
+                args[1]
+            ),
+            elems=(
+                features, 
+                valid_mask
+            ),
             fn_output_signature=(
-                tf.RaggedTensorSpec(
-                    shape=(None, self.resolution, self.resolution, self.num_classes), 
+                tf.TensorSpec(
+                    shape=(
+                        features_size_pred, 
+                        self.resolution, 
+                        self.resolution, 
+                        self.num_classes), 
                     dtype=tf.float32,
-                    ragged_rank=1
-                ),
-                tf.RaggedTensorSpec(
-                    shape=(None,), 
-                    dtype=tf.int32
                 )
             )
         )
 
-        masks, indices = results
-
-        # sort all indices to maintain the order of features
-        indices = indices.merge_dims(0, 1)
-        if isinstance(indices, tf.RaggedTensor):
-            indices = indices.to_tensor()
-        indices = tf.argsort(indices, axis=0)
-
-        # masks shape: [M, resolution, resolution, num_classes]
-        masks = masks.merge_dims(0, 1)
-        if isinstance(masks, tf.RaggedTensor):
-            masks = masks.to_tensor()
-        masks = tf.gather(masks, indices)
-
         # tf.print(
         #     'ROIMaskHead', 
-        #     'masks:', tf.shape(masks),
+        #     'masks:', tf.shape(results),
         # )
-
-        return masks
+        
+        # results shape: [
+        #   B, 
+        #   features_size_pred, 
+        #   resolution, 
+        #   resolution, 
+        #   num_classes
+        # ]
+        return results

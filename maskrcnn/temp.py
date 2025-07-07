@@ -256,3 +256,49 @@ class ROIBBoxHead(layers.Layer):
         # )
 
         return bbox_deltas
+    
+
+
+    
+    # def rois_features(self, rois, feature_map, stride, level):
+    #     # feature_maps shape: [H, W, C]
+
+    #     # rois shape: [N, 4], if N is 0, return empty tensor
+    #     if tf.size(rois) == 0:
+    #         return tf.zeros(
+    #             shape=(
+    #                 0, 
+    #                 self.output_size, 
+    #                 self.output_size, 
+    #                 self.feature_size
+    #             ),
+    #             dtype=tf.float32
+    #         )
+        
+    #     scale = 1.0 / stride
+    #     bboxes = rois * scale
+        
+    #     features = tf.map_fn(
+    #         lambda args: image_sample_and_resize(
+    #             feature_map, 
+    #             args[0], 
+    #             (self.output_size, self.output_size), 
+    #             self.sampling_ratio
+    #         ),
+    #         elems=(bboxes,),
+    #         fn_output_signature=tf.TensorSpec(
+    #             shape=(
+    #                 self.output_size, 
+    #                 self.output_size, 
+    #                 self.feature_size
+    #             ),
+    #             dtype=tf.float32
+    #         )
+    #     )
+
+    #     # tf.print('rois_features:', tf.shape(features), 
+    #     #          'in feature_map', level, 
+    #     #          'rois:', tf.shape(rois)
+    #     # )
+    #     # features shape: [N, output_size, output_size, C]
+    #     return features
