@@ -94,7 +94,6 @@ class ROIAlign(layers.Layer):
         return features
 
         
-    
     def rois_features(self, rois, feature_map, stride, level):
         # normalized roi box to [0, 1], order is [y1, x1, y2, x2]
         # feature_maps shape: [H, W, C]
@@ -117,9 +116,9 @@ class ROIAlign(layers.Layer):
 
         # stack to [N, 4] tensor
         # where each row is [y1, x1, y2, x2]
-        normalized_boxes = tf.stack([y1, x1, y2, x2], axis=1)
+        normalized_boxes = tf.stack([ y1, x1, y2, x2 ], axis=1)
         bbox_indices = tf.zeros(
-            [tf.shape(rois)[0]], dtype=tf.int32
+            [ tf.shape(rois)[0] ], dtype=tf.int32
         )
         # feature_map shape: [H, W, C] -> [1, H, W, C]
         feature_map = tf.expand_dims(feature_map, axis=0)
@@ -131,7 +130,7 @@ class ROIAlign(layers.Layer):
             feature_map, 
             normalized_boxes, 
             bbox_indices, 
-            [self.output_size, self.output_size],
+            [ self.output_size, self.output_size ],
             method='bilinear',
         )
 
@@ -141,3 +140,4 @@ class ROIAlign(layers.Layer):
         # )
         # features shape: [N, output_size, output_size, C]
         return features
+    

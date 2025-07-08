@@ -28,75 +28,110 @@ def compute_iou(boxes1, boxes2):
     # shape [P, G]
     return iou
 
+import tensorflow as tf
 
-def bilinear_interpolate(image, coords):
+def bilinear_interpolate_batch(images, coords, batch_indices):
     """
-    image: [H, W, C], float32
-    coords: [N, 2], float32 (y, x)
-    returns: [N, C]
+    images: [N, H, W, C]
+    coords: [M, S, 2] (y, x)  # S=采样点数
+    batch_indices: [M]，每个box对应的image索引
+    返回 [M, S, C]
     """
-    H = tf.cast(tf.shape(image)[0], tf.float32)
-    W = tf.cast(tf.shape(image)[1], tf.float32)
-    N = tf.shape(coords)[0]
+    N = tf.shape(images)[0]
+    H = tf.cast(tf.shape(images)[1], tf.float32)
+    W = tf.cast(tf.shape(images)[2], tf.float32)
 
-    # tf.image.crop_and_resize 需要 boxes: [N, 4] (y1, x1, y2, x2), 范围[0,1]
-    # 这里每个 box 是一个点，y1==y2, x1==x2
-    y = coords[:, 0] / (H - 1)
-    x = coords[:, 1] / (W - 1)
-    boxes = tf.stack([y, x, y, x], axis=1)      # [N, 4]
-    box_indices = tf.zeros([N], dtype=tf.int32) # 假设 image 没有 batch 维
+    y = coords[..., 0]  # [M, S]
+    x = coords[..., 1]  # [M, S]
 
-    image = tf.expand_dims(image, axis=0)  # [1, H, W, C]
-    vals = tf.image.crop_and_resize(
-        image, boxes, box_indices, crop_size=[1, 1], method='bilinear'
-    )  # [N, 1, 1, C]
-    vals = tf.squeeze(vals, axis=[1, 2])  # [N, C]
+    y0 = tf.floor(y)
+    x0 = tf.floor(x)
+    y1 = y0 + 1
+    x1 = x0 + 1
+
+    y0_clip = tf.clip_by_value(y0, 0, H - 1)
+    y1_clip = tf.clip_by_value(y1, 0, H - 1)
+    x0_clip = tf.clip_by_value(x0, 0, W - 1)
+    x1_clip = tf.clip_by_value(x1, 0, W - 1)
+
+    y0_int = tf.cast(y0_clip, tf.int32)
+    y1_int = tf.cast(y1_clip, tf.int32)
+    x0_int = tf.cast(x0_clip, tf.int32)
+    x1_int = tf.cast(x1_clip, tf.int32)
+
+    # batch_indices: [M] -> [M, S]
+    b = tf.expand_dims(batch_indices, axis=-1)  # [M, 1]
+    b = tf.tile(b, [1, tf.shape(coords)[1]])    # [M, S]
+
+    def gather(b, y, x):
+        # [M, S, 3] for gather_nd
+        idx = tf.stack([b, y, x], axis=-1)
+        return tf.gather_nd(images, idx)  # [M, S, C]
+
+    Ia = gather(b, y0_int, x0_int)
+    Ib = gather(b, y1_int, x0_int)
+    Ic = gather(b, y0_int, x1_int)
+    Id = gather(b, y1_int, x1_int)
+
+    y0f = tf.cast(y0_clip, tf.float32)
+    y1f = tf.cast(y1_clip, tf.float32)
+    x0f = tf.cast(x0_clip, tf.float32)
+    x1f = tf.cast(x1_clip, tf.float32)
+
+    wa = tf.expand_dims((y1f - y) * (x1f - x), -1)
+    wb = tf.expand_dims((y - y0f) * (x1f - x), -1)
+    wc = tf.expand_dims((y1f - y) * (x - x0f), -1)
+    wd = tf.expand_dims((y - y0f) * (x - x0f), -1)
+
+    vals = wa * Ia + wb * Ib + wc * Ic + wd * Id  # [M, S, C]
     return vals
 
-
-def image_sample_and_resize(image, box, output_size, sampling_ratio):
+def image_sample_and_resize(images, boxes, box_indices, output_size, sampling_ratio):
     """
-    image: [H, W, C], float32
-    box: [4] - x1, y1, x2, y2
-    Returns: [ output_size[0], output_size[1], C]
+    images: [N, H, W, C] (float32)
+    boxes: [M, 4] (x1, y1, x2, y2, float32, 坐标为像素下标)
+    box_indices: [M] (每个 box 属于第几张 image)
+    output_size: [h_out, w_out]
+    sampling_ratio: int，每个输出位置采样采样点的 sqrt 个数
+    返回: [M, h_out, w_out, C]
     """
-    x1, y1, x2, y2 = tf.unstack(box)
     h_out, w_out = output_size
+    M = tf.shape(boxes)[0]
+    C = tf.shape(images)[-1]
 
+    x1, y1, x2, y2 = tf.unstack(boxes, axis=1)
     roi_h = tf.maximum(y2 - y1, 1e-6)
     roi_w = tf.maximum(x2 - x1, 1e-6)
 
     bin_h = roi_h / tf.cast(h_out, tf.float32)
     bin_w = roi_w / tf.cast(w_out, tf.float32)
 
-    # bin center
-    grid_y = tf.linspace(0.0, tf.cast(h_out, tf.float32) - 1.0, h_out)
-    grid_x = tf.linspace(0.0, tf.cast(w_out, tf.float32) - 1.0, w_out)
-    grid_y, grid_x = tf.meshgrid(grid_y, grid_x, indexing='ij')
-    grid_y = y1 + (grid_y + 0.5) * bin_h
-    grid_x = x1 + (grid_x + 0.5) * bin_w
+    grid_y = tf.linspace(0.0, tf.cast(h_out, tf.float32) - 1.0, h_out)  # [h_out]
+    grid_x = tf.linspace(0.0, tf.cast(w_out, tf.float32) - 1.0, w_out)  # [w_out]
+    grid_y, grid_x = tf.meshgrid(grid_y, grid_x, indexing='ij')  # [h_out, w_out]
 
-    # sample offsets
-    sampling_offsets = tf.linspace(0.0, 1.0, sampling_ratio + 1)[:-1] + \
-        0.5 / sampling_ratio
+    # [M, h_out, w_out]
+    grid_y = y1[:, None, None] + (grid_y[None, :, :] + 0.5) * bin_h[:, None, None]
+    grid_x = x1[:, None, None] + (grid_x[None, :, :] + 0.5) * bin_w[:, None, None]
+
+    sampling_offsets = tf.linspace(0.0, 1.0, sampling_ratio + 1)[:-1] + 0.5 / sampling_ratio
     sampling_offsets /= tf.cast(sampling_ratio, tf.float32)
-    offset_y, offset_x = tf.meshgrid(
-        sampling_offsets, sampling_offsets, indexing='ij'
-    )
-    offset_y = tf.reshape(offset_y, [-1])
-    offset_x = tf.reshape(offset_x, [-1])
+    offset_y, offset_x = tf.meshgrid(sampling_offsets, sampling_offsets, indexing='ij')
+    offset_y = tf.reshape(offset_y, [-1])  # [S]
+    offset_x = tf.reshape(offset_x, [-1])  # [S]
+    S = sampling_ratio * sampling_ratio
 
-    # sample coordinates
-    grid_y = tf.expand_dims(grid_y, axis=-1) + offset_y * bin_h  # [H, W, S*S]
-    grid_x = tf.expand_dims(grid_x, axis=-1) + offset_x * bin_w  # [H, W, S*S]
+    # [M, h_out, w_out, S]
+    grid_y = tf.expand_dims(grid_y, axis=-1) + offset_y * bin_h[:, None, None, None]
+    grid_x = tf.expand_dims(grid_x, axis=-1) + offset_x * bin_w[:, None, None, None]
 
-    coords = tf.stack([grid_y, grid_x], axis=-1)  # [H, W, S*S, 2]
-    coords = tf.reshape(coords, [-1, 2])  # [H*W*S*S, 2]
+    # [M, h_out, w_out, S, 2]
+    coords = tf.stack([grid_y, grid_x], axis=-1)
+    coords = tf.reshape(coords, [M, -1, 2])  # [M, h_out*w_out*S, 2]
 
-    sampled_vals = bilinear_interpolate(image, coords)  # [H*W*S*S, C]
-    sampled_vals = tf.reshape(
-        sampled_vals, 
-        [h_out, w_out, sampling_ratio * sampling_ratio, -1]
-    )  # [H, W, S*S, C]
-    avg_vals = tf.reduce_mean(sampled_vals, axis=2)  # [H, W, C]
+    # 双线性插值采样
+    sampled_vals = bilinear_interpolate_batch(images, coords, box_indices)  # [M, h_out*w_out*S, C]
+    sampled_vals = tf.reshape(sampled_vals, [M, h_out, w_out, S, C])       # [M, h_out, w_out, S, C]
+    avg_vals = tf.reduce_mean(sampled_vals, axis=3)                        # [M, h_out, w_out, C]
+
     return avg_vals

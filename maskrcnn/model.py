@@ -160,15 +160,15 @@ class MaskRCNN(Model):
         # roi class and bbox head
         features = self.roi_align(
             feature_maps=[p2, p3, p4, p5], 
-            rois=proposals,
-            valid_mask=valid_mask,
+            rois=proposals, 
+            valid_mask=valid_mask, 
             roi_size_pred=self.post_nms_topk
         )
-
+        
         classifier_logits = self.classifier_head(
             features, 
-            valid_mask,
-            features_size_pred=self.post_nms_topk,
+            valid_mask, 
+            features_size_pred=self.post_nms_topk, 
             training=training
         )
         
@@ -186,6 +186,7 @@ class MaskRCNN(Model):
             valid_mask=valid_mask,
             roi_size_pred=self.post_nms_topk
         )
+
         class_masks = self.mask_head(
             features_mask, 
             valid_mask,
