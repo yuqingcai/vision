@@ -124,8 +124,8 @@ class ROIAlign(layers.Layer):
         feature_map = tf.expand_dims(feature_map, axis=0)
 
         # features shape: [N, output_size, output_size, C]
-        # if normalized_boxes is empty,
-        # tf.image.crop_and_resize will return empty tensor
+        # if normalized_boxes is empty then crop_and_resize 
+        # will return empty tensor
         features = tf.image.crop_and_resize(
             feature_map, 
             normalized_boxes, 
@@ -133,7 +133,7 @@ class ROIAlign(layers.Layer):
             [ self.output_size, self.output_size ],
             method='bilinear',
         )
-
+        
         # tf.print('rois_features:', tf.shape(features), 
         #          'in feature_map', level, 
         #          'rois:', tf.shape(rois)
