@@ -113,7 +113,7 @@ class ROIAlign(layers.Layer):
         y1 = bboxes[:, 1] / fm_height
         x2 = bboxes[:, 2] / fm_width
         y2 = bboxes[:, 3] / fm_height
-
+        
         # stack to [N, 4] tensor
         # where each row is [y1, x1, y2, x2]
         normalized_boxes = tf.stack([ y1, x1, y2, x2 ], axis=1)
