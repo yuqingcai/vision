@@ -204,7 +204,7 @@ class ProposalGenerator(layers.Layer):
             x_2 = p_x + 0.5 * p_w
             y_2 = p_y + 0.5 * p_h
             proposals = tf.stack([x_1, y_1, x_2, y_2], axis=1)
-
+            
             # clip proposals to the image size
             height = tf.cast(image_size[0], tf.float32)
             width  = tf.cast(image_size[1], tf.float32)

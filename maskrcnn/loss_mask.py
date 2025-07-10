@@ -8,7 +8,6 @@ def loss_mask_fn(
         gt_labels, 
         gt_bboxes, 
         gt_masks,
-        roi_sample_ratio,
         iou_pos_thresh=0.7,
         iou_neg_thresh=0.3):
     

@@ -25,14 +25,13 @@ class ROIMaskHead(layers.Layer):
         self.resolution = roi_output_size * 2
 
     def call(self, features, valid_mask, features_size_pred):
-        """
-            features shape: [B, N, S, S, F]
-            valid_mask shape: [B, N]
-            where B is batch size, N is number of ROIs,
-            S is the size of the ROI (e.g., 14 for 14x14),
-            and F is the feature dimension (e.g., 256).
-            features_size_pred is the number of predicted class 
-            logits per image.
+        """features shape: [B, N, S, S, F]
+        valid_mask shape: [B, N]
+        where B is batch size, N is number of ROIs,
+        S is the size of the ROI (e.g., 14 for 14x14),
+        and F is the feature dimension (e.g., 256).
+        features_size_pred is the number of predicted class 
+        logits per image.
         """
 
         def masks_per_image(features, valid_mask):

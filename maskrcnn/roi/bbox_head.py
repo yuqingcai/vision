@@ -10,14 +10,13 @@ class ROIBBoxHead(layers.Layer):
         self.bbox_pred = layers.Dense(self.num_classes * 4, activation=None)
 
     def call(self, features, valid_mask, features_size_pred):
-        """
-            features shape: [B, N, S, S, F]
-            valid_mask shape: [B, N]
-            where B is batch size, N is number of ROIs,
-            S is the size of the ROI (e.g., 7 for 7x7),
-            and F is the feature dimension (e.g., 256).
-            features_size_pred is the number of predicted bounding 
-            boxes per image.
+        """features shape: [B, N, S, S, F]
+        valid_mask shape: [B, N]
+        where B is batch size, N is number of ROIs,
+        S is the size of the ROI (e.g., 7 for 7x7),
+        and F is the feature dimension (e.g., 256).
+        features_size_pred is the number of predicted bounding 
+        boxes per image.
         """
 
         def bbox_deltas_per_image(features, valid_mask):
@@ -74,6 +73,6 @@ class ROIBBoxHead(layers.Layer):
         )
 
         # tf.print('bbox_deltas:', tf.shape(results))
-
+        
         # results shape: [B, features_size_pred, num_classes * 4]
         return results

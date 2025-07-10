@@ -10,14 +10,13 @@ class ROIClassifierHead(layers.Layer):
         self.class_logits_pred = layers.Dense(num_classes, activation=None)
     
     def call(self, features, valid_mask, features_size_pred):
-        """
-            features shape: [B, N, S, S, F]
-            valid_mask shape: [B, N]
-            where B is batch size, N is number of ROIs,
-            S is the size of the ROI (e.g., 7 for 7x7),
-            and F is the feature dimension (e.g., 256).
-            features_size_pred is the number of predicted class 
-            logits per image.
+        """features shape: [B, N, S, S, F]
+        valid_mask shape: [B, N]
+        where B is batch size, N is number of ROIs,
+        S is the size of the ROI (e.g., 7 for 7x7),
+        and F is the feature dimension (e.g., 256).
+        features_size_pred is the number of predicted class 
+        logits per image.
         """
 
         def class_logits_per_image(features, valid_mask):

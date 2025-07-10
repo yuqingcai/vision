@@ -38,8 +38,8 @@ if __name__ == '__main__':
         img_dir=train_img_dir,
         batch_size=batch_size,
         shuffle=False,
-        min_size=100,   # 800
-        max_size=200    # 1333
+        min_size=800,   # 800
+        max_size=1333   # 1333
     )
     
     model = MaskRCNN(

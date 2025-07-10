@@ -13,15 +13,14 @@ class ROIAlign(layers.Layer):
         self.feature_size = feature_size
 
     def call(self, feature_maps, rois, valid_mask, roi_size_pred):
-        """
-            feature_maps is a list of feature map, each feature map is 
-            a [B, H, W, C] tensor.
-            rois is a [B, N, 4] tensor, where each row is [x1, y1, x2, y2]
-            calculate roi_level, it is used to select the feature map.
-            roi_level is determined by the size of the roi, the range 
-            is [2, 5] corresponding P2, P3, P4 and P5 feature maps.
-            small rois are assigned to P2, large rois are assigned to P5.
-            roi_level shape is [N, 1], where N is the number of rois.
+        """feature_maps is a list of feature map, each feature map is 
+        a [B, H, W, C] tensor.
+        rois is a [B, N, 4] tensor, where each row is [x1, y1, x2, y2]
+        calculate roi_level, it is used to select the feature map.
+        roi_level is determined by the size of the roi, the range 
+        is [2, 5] corresponding P2, P3, P4 and P5 feature maps.
+        small rois are assigned to P2, large rois are assigned to P5.
+        roi_level shape is [N, 1], where N is the number of rois.
         """
         # tf.print('ROIAlign rois:', tf.shape(rois))
 

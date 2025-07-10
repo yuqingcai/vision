@@ -111,19 +111,17 @@ class MaskRCNN(Model):
     
     
     def call(self, images, image_sizes, training=False):
-        """
-        rois shape: [B, (None), 4]
+        """rois shape: [B, (None), 4]
         features_class shape: [B, (None), 7, 7, 256]
         class_logits shape: [B, (None), 81]
         bbox_deltas shape: [B, (None), 81*4]
         features_mask shape: [B, (None), 14, 14, 256]
         masks shape: [B, (None), 28, 28, 80]
-
         image_sizes is not equal to images.shape[:2] because
         images is padded, image_sizes is the original image
         size (i.e the size of the content in a padded image).
-        
         """
+
         if os.environ.get('GPU_ENABLE', 'FALSE') == 'TRUE':
             gpus = tf.config.list_physical_devices('GPU')
             if gpus:
@@ -266,8 +264,7 @@ class MaskRCNN(Model):
                 class_masks, 
                 gt_labels, 
                 gt_bboxes, 
-                gt_masks,
-                self.roi_sample_ratio
+                gt_masks
             )
 
             loss_total = loss_rpn_objectness_reg + \

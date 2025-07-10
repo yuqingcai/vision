@@ -202,14 +202,13 @@ def resize_segmentations(segmentations, scale):
 
 
 def create_masks(rles, scale):
-    """
-        rles contain a list RLE object of a picture,
-        the data return is a list of masks,
-        each mask is a 2D array with shape (H, W),
-        where H and W are the height and width of the resized image.
-        The mask is resized to the same scale as the image.
-        The mask is a binary mask, where 1 means the object is present,
-        and 0 means the object is not present.
+    """rles contain a list RLE object of a picture,
+    the data return is a list of masks,
+    each mask is a 2D array with shape (H, W),
+    where H and W are the height and width of the resized image.
+    The mask is resized to the same scale as the image.
+    The mask is a binary mask, where 1 means the object is present,
+    and 0 means the object is not present.
     """
     def rle_to_mask(rle, scale):
         rle = json.loads(rle.numpy().decode('utf-8'))
@@ -221,9 +220,11 @@ def create_masks(rles, scale):
         # cv2 size is (Width x Height)
         new_size = (new_width, new_height)
 
-        resized = cv2.resize(mask, 
-                             new_size, 
-                             interpolation=cv2.INTER_NEAREST)
+        resized = cv2.resize(
+            mask, 
+            new_size, 
+            interpolation=cv2.INTER_NEAREST
+        )
         return resized.astype(np.uint8)
 
     def rle_to_mask_wrap(rle, scale):
