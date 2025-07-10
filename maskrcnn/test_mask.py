@@ -17,14 +17,14 @@ ann_file = os.path.join(coco_root, 'annotations/instances_train2017.json')
 
 if __name__ == '__main__':
     
-    batch_size = 4
+    batch_size = 1
     ds_train = create_dataset(
         ann_file=ann_file,
         img_dir=train_img_dir,
         batch_size=batch_size,
         shuffle=False,
         min_size=800,   # 800
-        max_size=1333    # 1333
+        max_size=1333   # 1333
     )
     
     batch_0 = next(iter(ds_train))
@@ -35,16 +35,15 @@ if __name__ == '__main__':
         batch_0['file_path']):
 
         file_name = os.path.basename(file_path.numpy().decode('utf-8'))
-        plt.figure()
+        fig1 = plt.figure()
         plt.imshow(image.numpy())
         plt.axis('off')
         plt.title(file_name)
         
         for mask in masks:
-            plt.figure()
+            fig2 = plt.figure()
             plt.title(file_name)
             plt.imshow(mask.numpy(), alpha=0.5, cmap='gray')
             plt.axis('off')
-
-    
+        
     plt.show()

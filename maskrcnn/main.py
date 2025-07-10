@@ -51,7 +51,7 @@ if __name__ == '__main__':
         optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
     )
     model.summary()
-
+    
     epochs = 10
     t_0 = time.time()
     for epoch in range(epochs):
