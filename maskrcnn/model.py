@@ -118,8 +118,8 @@ class MaskRCNN(Model):
         features_mask shape: [B, (None), 14, 14, 256]
         masks shape: [B, (None), 28, 28, 80]
         image_sizes is not equal to images.shape[:2] because
-        images is padded, image_sizes is the original image
-        size (i.e the size of the content in a padded image).
+        images is padded, image_sizes is the original size (i.e the 
+        size of the content in a padded image).
         """
 
         if os.environ.get('GPU_ENABLE', 'FALSE') == 'TRUE':
