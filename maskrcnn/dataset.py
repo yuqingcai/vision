@@ -138,8 +138,9 @@ def rle_from_seg(seg, height, width):
 def scale_to(size, min_size=800, max_size=1333):
     h = tf.cast(size[0], tf.float32)
     w = tf.cast(size[1], tf.float32)
-    scale = tf.minimum(min_size / tf.minimum(h, w), \
-                max_size / tf.maximum(h, w))
+    scale = tf.minimum(
+        min_size / tf.minimum(h, w),
+        max_size / tf.maximum(h, w))
     return scale
 
 

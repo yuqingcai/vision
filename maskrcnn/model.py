@@ -121,13 +121,7 @@ class MaskRCNN(Model):
         images is padded, image_sizes is the original size (i.e the 
         size of the content in a padded image).
         """
-
-        if os.environ.get('GPU_ENABLE', 'FALSE') == 'TRUE':
-            gpus = tf.config.list_physical_devices('GPU')
-            if gpus:
-                info = tf.config.experimental.get_memory_info('GPU:0')
-                print('Before backbone, GPU memory:', info)
-
+        
         c2, c3, c4, c5 = self.backbone(images, training=training)
         
         p2, p3, p4, p5 = self.fpn([c2, c3, c4, c5])
@@ -192,11 +186,6 @@ class MaskRCNN(Model):
             training=training
         )
         
-        if os.environ.get('GPU_ENABLE', 'FALSE') == 'TRUE':
-            if gpus:
-                info = tf.config.experimental.get_memory_info('GPU:0')
-                print('After backbone, GPU memory:', info)
-        
         return (
             proposals, 
             valid_mask,
@@ -218,6 +207,9 @@ class MaskRCNN(Model):
         gt_bboxes = batch['bbox']
         gt_masks = batch['mask']
         gt_labels = batch['label']
+
+        tf.print('images shape:', tf.shape(images), 
+                 'origin sizes:', sizes)
 
         with tf.GradientTape() as tape:
             proposals, \

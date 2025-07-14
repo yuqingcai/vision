@@ -19,11 +19,6 @@ os.environ["GPU_ENABLE"] = "FALSE"
 if os.environ.get("GPU_ENABLE", "FALSE") == "FALSE":
     tf.config.set_visible_devices([], 'GPU')
 
-if os.environ.get("GPU_ENABLE", "FALSE") == "TRUE":
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    for gpu in gpus:
-        tf.config.experimental.set_memory_growth(gpu, True)
-
 # mixed_precision.set_global_policy('mixed_float16')
 
 coco_root = '../../dataset/coco2017/'
@@ -45,7 +40,7 @@ if __name__ == '__main__':
     model = MaskRCNN(
         input_shape=(None, None, 3),
         batch_size=batch_size,
-        backbone_type='resnet50'
+        backbone_type='resnet101'
     )
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
