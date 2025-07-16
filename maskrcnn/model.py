@@ -123,7 +123,7 @@ class MaskRCNN(Model):
         """
         
         c2, c3, c4, c5 = self.backbone(images, training=training)
-        
+
         p2, p3, p4, p5 = self.fpn([c2, c3, c4, c5])
         
         anchors = self.anchor_generator(
@@ -134,11 +134,11 @@ class MaskRCNN(Model):
             scales=self.anchor_scales,
             image_sizes=image_sizes
         )
-        
+
         rpn_objectness_logits, rpn_bbox_deltas = self.rpn_head(
             [p2, p3, p4, p5], training=training
         )
-        
+
         proposals, \
         rpn_objectness_logits, \
         rpn_bbox_deltas, \
@@ -148,7 +148,7 @@ class MaskRCNN(Model):
             rpn_objectness_logits, 
             rpn_bbox_deltas
         )
-        
+
         # roi class and bbox head
         features = self.roi_align(
             feature_maps=[p2, p3, p4, p5], 
@@ -156,14 +156,14 @@ class MaskRCNN(Model):
             valid_mask=valid_mask, 
             roi_size_pred=self.post_nms_topk
         )
-        
+
         classifier_logits = self.classifier_head(
             features, 
             valid_mask, 
             features_size_pred=self.post_nms_topk, 
             training=training
         )
-        
+
         class_bbox_deltas = self.class_spec_bbox_head(
             features, 
             valid_mask,
@@ -171,7 +171,7 @@ class MaskRCNN(Model):
             training=training
         )
         
-        # # roi mask head
+        # roi mask head
         features_mask = self.roi_align_mask(
             feature_maps=[p2, p3, p4, p5], 
             rois=proposals,
@@ -208,10 +208,11 @@ class MaskRCNN(Model):
         gt_masks = batch['mask']
         gt_labels = batch['label']
 
-        tf.print('images shape:', tf.shape(images), 
-                 'origin sizes:', sizes)
+        # tf.print('images shape:', tf.shape(images), 
+        #          'origin sizes:', sizes)
 
         with tf.GradientTape() as tape:
+
             proposals, \
             valid_mask, \
             rpn_objectness_logits, \
@@ -219,7 +220,7 @@ class MaskRCNN(Model):
             classifier_logits, \
             class_bbox_deltas, \
             class_masks = self.call(images, sizes, training=True)
-            
+
             loss_rpn_objectness_reg = loss_rpn_objectness_fn(
                 proposals,
                 valid_mask,
@@ -244,7 +245,7 @@ class MaskRCNN(Model):
 
             loss_class_spec_box_reg = loss_class_box_reg_fn(
                 proposals, 
-                valid_mask,
+                valid_mask, 
                 class_bbox_deltas, 
                 gt_labels, 
                 gt_bboxes
@@ -264,6 +265,22 @@ class MaskRCNN(Model):
                 loss_classifier_reg + \
                 loss_class_spec_box_reg + \
                 loss_mask
+
+            tf.print(
+                'proposals', proposals.dtype,
+                'valid_mask', valid_mask.dtype,
+                'rpn_objectness_logits', rpn_objectness_logits.dtype,
+                'rpn_bbox_deltas', rpn_bbox_deltas.dtype,
+                'classifier_logits', classifier_logits.dtype,
+                'class_bbox_deltas', class_bbox_deltas.dtype,
+                'class_masks', class_masks.dtype,
+                'loss_rpn_objectness_reg', loss_rpn_objectness_reg.dtype,
+                'loss_rpn_box_reg', loss_rpn_box_reg.dtype,
+                'loss_classifier_reg', loss_classifier_reg.dtype,
+                'loss_class_spec_box_reg', loss_class_spec_box_reg.dtype,
+                'loss_mask', loss_mask.dtype,
+                'loss_total', loss_total.dtype
+            )
 
         grads = tape.gradient(loss_total, self.trainable_variables)
 

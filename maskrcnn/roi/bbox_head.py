@@ -3,11 +3,25 @@ from tensorflow.keras import layers
 
 class ROIBBoxHead(layers.Layer):
     def __init__(self, num_classes, hidden_dim, **kwargs):
+
         super().__init__(**kwargs)
+
         self.num_classes = num_classes
-        self.fc1 = layers.Dense(hidden_dim, activation='relu')
-        self.fc2 = layers.Dense(hidden_dim, activation='relu')
-        self.bbox_pred = layers.Dense(self.num_classes * 4, activation=None)
+        self.fc1 = layers.Dense(
+            hidden_dim, 
+            activation='relu', 
+            dtype=tf.float32
+        )
+        self.fc2 = layers.Dense(
+            hidden_dim, 
+            activation='relu', 
+            dtype=tf.float32
+        )
+        self.bbox_pred = layers.Dense(
+            self.num_classes * 4, 
+            activation=None, 
+            dtype=tf.float32
+        )
 
     def call(self, features, valid_mask, features_size_pred):
         """features shape: [B, N, S, S, F]
@@ -42,7 +56,7 @@ class ROIBBoxHead(layers.Layer):
             bbox_deltas = tf.pad(
                 bbox_deltas, 
                 [[0, tf.shape(pad_indices)[0]], [0, 0]], 
-                constant_values=0.0
+                constant_values=tf.constant(0.0, dtype=tf.float32)
             )
 
             indices = tf.concat([valid_indices, pad_indices], axis=0)
@@ -67,6 +81,7 @@ class ROIBBoxHead(layers.Layer):
                         features_size_pred, 
                         self.num_classes*4
                     ), 
+                    # mixed_precision, using tf.float16
                     dtype=tf.float32
                 )
             )

@@ -1,12 +1,19 @@
 import tensorflow as tf
-from tensorflow.keras import layers
-from utils import image_sample_and_resize
-
+from tensorflow.keras import layers, mixed_precision
 
 class ROIAlign(layers.Layer):
-    def __init__(self, output_size, sampling_ratio, 
-                 feature_strides, feature_size, **kwargs):
-        super().__init__(**kwargs)
+
+    def __init__(self, 
+                 output_size, 
+                 sampling_ratio, 
+                 feature_strides, 
+                 feature_size, 
+                 **kwargs):
+        
+        super().__init__(
+            dtype=mixed_precision.Policy('float32'), 
+            **kwargs
+        )
         self.output_size = output_size
         self.sampling_ratio = sampling_ratio
         self.feature_strides = feature_strides
@@ -36,7 +43,8 @@ class ROIAlign(layers.Layer):
                     self.output_size, 
                     self.feature_size
                 ), 
-                dtype=tf.float32
+                # mixed_precision, using tf.float16
+                dtype=tf.float16
             )
         )
         
@@ -44,7 +52,6 @@ class ROIAlign(layers.Layer):
         return features
     
     def roi_align_per_image(self, feature_maps, rois, valid_mask):
-
         # tf.print(
         #     'roi_align_per_image valid_mask:', 
         #     tf.reduce_sum(tf.cast(valid_mask, tf.int32))
@@ -91,8 +98,7 @@ class ROIAlign(layers.Layer):
         )
         
         return features
-
-        
+    
     def rois_features(self, rois, feature_map, stride, level):
         # normalized roi box to [0, 1], order is [y1, x1, y2, x2]
         # feature_maps shape: [H, W, C]
@@ -105,7 +111,7 @@ class ROIAlign(layers.Layer):
 
         fm_height = tf.cast(tf.shape(feature_map)[0], dtype=tf.float32)
         fm_width = tf.cast(tf.shape(feature_map)[1], dtype=tf.float32)
-
+        
         # normalize bboxes to [0, 1]
         # bboxes shape: [N, 4]
         x1 = bboxes[:, 0] / fm_width
@@ -132,6 +138,8 @@ class ROIAlign(layers.Layer):
             [ self.output_size, self.output_size ],
             method='bilinear',
         )
+        # mixed_precision, using tf.float16
+        features = tf.cast(features, tf.float16) 
         
         # tf.print('rois_features:', tf.shape(features), 
         #          'in feature_map', level, 

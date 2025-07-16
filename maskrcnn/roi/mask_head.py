@@ -2,24 +2,42 @@ import tensorflow as tf
 from tensorflow.keras import layers
 
 class ROIMaskHead(layers.Layer):
+
     def __init__(self, 
                  num_classes, 
                  conv_dim, 
                  num_convs, 
                  roi_output_size,
                  **kwargs):
+        
         super().__init__(**kwargs)
+
         self.num_classes = num_classes
+
         self.conv_layers = [
-            layers.Conv2D(conv_dim, 3, padding='same', activation='relu') \
-                for _ in range(num_convs)
+            layers.Conv2D(
+                conv_dim, 
+                3, 
+                padding='same', 
+                dtype=tf.float32, 
+                activation='relu'
+            ) for _ in range(num_convs)
         ]
+
         self.upsample = layers.Conv2DTranspose(
-            conv_dim, 2, strides=2, padding='valid', activation='relu'
+            conv_dim, 
+            2, 
+            strides=2, 
+            padding='valid', 
+            dtype=tf.float32,
+            activation='relu'
         )
 
         self.mask_pred = tf.keras.layers.Conv2D(
-            num_classes, 1, activation=None 
+            num_classes, 
+            1, 
+            dtype=tf.float32, 
+            activation=None 
         )
 
         self.resolution = roi_output_size * 2
@@ -56,7 +74,7 @@ class ROIMaskHead(layers.Layer):
             masks = tf.pad(
                 masks, 
                 [[0, tf.shape(pad_indices)[0]], [0, 0], [0, 0], [0, 0]], 
-                constant_values=0.0
+                constant_values=tf.constant(0.0, dtype=tf.float32)
             )
 
             indices = tf.concat([valid_indices, pad_indices], axis=0)
@@ -66,7 +84,7 @@ class ROIMaskHead(layers.Layer):
             # masks shape: [ M, resolution, resolution, num_classes ]
             return masks
 
-
+        
         results = tf.map_fn(
             lambda args: masks_per_image(
                 args[0], 

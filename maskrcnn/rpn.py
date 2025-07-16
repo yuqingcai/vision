@@ -1,10 +1,15 @@
 import tensorflow as tf
-from tensorflow.keras import layers
+from tensorflow import keras
+from tensorflow.keras import layers, mixed_precision
 
 
 class AnchorGenerator(layers.Layer):
+
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+
+        super().__init__(
+            dtype=mixed_precision.Policy('float32'), 
+            **kwargs)
 
     def call(self, 
              feature_maps, 
@@ -45,6 +50,7 @@ class AnchorGenerator(layers.Layer):
         
         # tf.print('AnchorGenerator',
         #         'anchors :', tf.shape(anchors))
+
         return anchors
     
     def anchors_per_feature_map(
@@ -92,7 +98,7 @@ class AnchorGenerator(layers.Layer):
         anchors = tf.reshape(base_anchors, [1, A, 4]) + \
             tf.reshape(shifts, [K, 1, 4])
         
-        # reshape anchors shape to [K*A, 4]
+        # reshape anchors shape to [K*A, 4],
         anchors = tf.reshape(anchors, [K * A, 4])
 
         # clip anchors to the image size
@@ -109,23 +115,38 @@ class AnchorGenerator(layers.Layer):
 
 
 class RPNHead(layers.Layer):
+
     def __init__(self, anchors_per_location, feature_size, **kwargs):
-        super().__init__(**kwargs)
+
+        super().__init__(
+            dtype=mixed_precision.Policy('float32'), 
+            **kwargs
+        )
 
         self.conv = layers.Conv2D(
-            feature_size, 3, padding="same", activation="relu"
+            feature_size, 
+            3, 
+            padding="same", 
+            activation="relu",
+            dtype=tf.float32
         )
         self.objectness_logits = layers.Conv2D(
-            anchors_per_location, 1, activation=None
+            anchors_per_location, 
+            1, 
+            activation=None,
+            dtype=tf.float32
         )
         self.bbox_deltas = layers.Conv2D(
-            anchors_per_location * 4, 1, activation=None
+            anchors_per_location * 4, 
+            1, 
+            activation=None,
+            dtype=tf.float32
         )
     
     def call(self, feature_maps):
         objectness_logits = []
         bbox_deltas = []
-
+        
         for feature_map in feature_maps:
             x = self.conv(feature_map)
             objectness_fm = self.objectness_logits(x)
@@ -163,14 +184,17 @@ class RPNHead(layers.Layer):
 class ProposalGenerator(layers.Layer):
     def __init__(self, pre_nms_topk=6000, post_nms_topk=1000, 
                  nms_thresh=0.7, min_size=16, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(
+            dtype=mixed_precision.Policy('float32'), 
+            **kwargs)
         self.pre_nms_topk = pre_nms_topk
         self.post_nms_topk = post_nms_topk
         self.nms_thresh = nms_thresh
         self.min_size = min_size
-    
+
+
     def call(self, anchors, image_sizes, objectness_logits, bbox_deltas):
-        
+
         # select top-k proposals per image
         def topk_per_image(anchors, image_size, objectness_logits, bbox_deltas):
             
@@ -255,26 +279,44 @@ class ProposalGenerator(layers.Layer):
             n = tf.shape(proposals)[0]
             pad = self.post_nms_topk - n
 
-            if pad > 0:
-                proposals = tf.pad(
+            def pad_fn():
+                proposals_pad = tf.pad(
                     proposals, 
                     [[0, pad], [0, 0]], 
                     constant_values=0.0
                 )
-                objectness_logits = tf.pad(
+
+                objectness_logits_pad = tf.pad(
                     objectness_logits, 
                     [[0, pad], [0, 0]], 
                     constant_values=1e-8
                 )
-                bbox_deltas = tf.pad(
+                
+                bbox_deltas_pad = tf.pad(
                     bbox_deltas, 
                     [[0, pad], [0, 0]], 
                     constant_values=0.0
                 )
 
-            return proposals, objectness_logits, bbox_deltas, \
-                tf.range(self.post_nms_topk) < n
-        
+                valid_mask_pad = tf.range(self.post_nms_topk) < n
+
+                return proposals_pad, \
+                    objectness_logits_pad, \
+                    bbox_deltas_pad, \
+                    valid_mask_pad
+
+            def no_pad_fn():
+                valid_mask = tf.range(self.post_nms_topk) < n
+                return proposals, objectness_logits, bbox_deltas, valid_mask
+            
+            return tf.cond(
+                pad > 0, 
+                pad_fn, 
+                no_pad_fn
+            )
+
+
+        # results: (proposals, objectness_logits, bbox_deltas, valid_mask)
         results = tf.map_fn(
             lambda args: topk_per_image(args[0], args[1], args[2], args[3]),
             elems=(anchors, image_sizes, objectness_logits, bbox_deltas),
@@ -285,7 +327,7 @@ class ProposalGenerator(layers.Layer):
                 tf.TensorSpec(shape=(self.post_nms_topk, ), dtype=tf.bool),
             )
         )
-
+        
         # proposals, objectness_logits, bbox_deltas, valid_mask = results
         # tf.print(
         #     'ProposalGenerator',

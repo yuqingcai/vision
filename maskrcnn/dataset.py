@@ -152,15 +152,17 @@ def resize_to(size, scale):
     return tf.stack([new_h, new_w])
 
 
-def resize_image(image, scale):
+def resize_image(image, scale, output_dtype=None):
     h = tf.shape(image)[0]
     w = tf.shape(image)[1]
     new_hw = resize_to(tf.stack([h, w]), scale)
     resized = tf.image.resize(image, new_hw, method='bilinear')
+    if output_dtype is not None:
+        resized = tf.cast(resized, output_dtype)
     return resized
 
 
-def padding_image(image, size=(1400, 1400)):
+def padding_image(image, size=(1400, 1400), output_dtype=None):
     origin_height = tf.shape(image)[0]
     origin_width = tf.shape(image)[1]
     
@@ -176,6 +178,10 @@ def padding_image(image, size=(1400, 1400)):
 
     padded = tf.image.pad_to_bounding_box(
         image, 0, 0, target_height, target_width)
+    
+    if output_dtype is not None:
+        padded = tf.cast(padded, output_dtype)
+
     return padded
 
 
@@ -188,9 +194,11 @@ def max_size_in_batch(sizes):
 def load_image(file_path, scale, padding_size):
     img_raw = tf.io.read_file(file_path)
     image = tf.image.decode_jpeg(img_raw, channels=3)
-    image = tf.image.convert_image_dtype(image, tf.float32)
-    resized = resize_image(image, scale)
-    padded = padding_image(resized, padding_size)
+    # mixed_precision, using tf.float16
+    image = tf.image.convert_image_dtype(image, tf.float16)
+    resized = resize_image(image, scale, tf.float16)
+    padded = padding_image(resized, padding_size, tf.float16)
+    
     return padded
 
 
@@ -296,12 +304,13 @@ def preprocess(batch, min_size, max_size):
     
     padding_size = max_size_in_batch(resizes)
     
+    # mixed_precision, using tf.float16
     images = tf.map_fn(
         lambda args: load_image(args[0], args[1], padding_size), 
         (batch['file_path'], scales),
         fn_output_signature=tf.TensorSpec(
             shape=(None, None, 3), 
-            dtype=tf.float32
+            dtype=tf.float16
         )
     )
 
@@ -388,13 +397,9 @@ def create_dataset(ann_file, img_dir, batch_size=4, shuffle=False,
     print(f"Dataset size: {len(entries)/batch_size}")
 
     ds = ds.ragged_batch(batch_size)
-
+    
     ds = ds.map(
-        partial(
-            preprocess, 
-            min_size=min_size, 
-            max_size=max_size
-        ), 
+        partial(preprocess, min_size=min_size, max_size=max_size), 
         num_parallel_calls=tf.data.AUTOTUNE)
     ds = ds.prefetch(tf.data.AUTOTUNE)
     return ds

@@ -68,7 +68,7 @@ def loss_rpn_box_reg_fn(
                     delta=1.0
                 )
             )
-
+            
             return loss
         
         loss = tf.cond(

@@ -27,7 +27,7 @@ def loss_rpn_objectness_fn(
         # gt_boxes shape: [M, 4]
         # valid_mask shape: [N]
         # ious shape: [N, M]
-
+        
         proposals_valid = tf.boolean_mask(proposals, valid_mask)
         objectness_logits_valid = tf.boolean_mask(
             objectness_logits_pred, valid_mask

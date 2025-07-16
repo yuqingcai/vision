@@ -35,7 +35,7 @@ def loss_class_box_reg_fn(
 
         proposals_pos = tf.boolean_mask(proposals_valid, pos_mask)
         if tf.size(proposals_pos) == 0:
-            tf.print('No positive proposals found, class_box loss returning zero.')
+            # tf.print('No positive proposals found, class_box loss returning zero.')
             return tf.constant(0.0, dtype=tf.float32)
         
         bbox_deltas_pred_pos = tf.boolean_mask(

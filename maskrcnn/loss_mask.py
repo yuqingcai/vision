@@ -36,7 +36,7 @@ def loss_mask_fn(
 
         proposals_pos = tf.boolean_mask(proposals_valid, pos_mask)
         if tf.size(proposals_pos) == 0:
-            tf.print('No positive proposals found, mask loss returning zero.')
+            # tf.print('No positive proposals found, mask loss returning zero.')
             return tf.constant(0.0, dtype=tf.float32)
         
         masks_pred_pos = tf.boolean_mask(

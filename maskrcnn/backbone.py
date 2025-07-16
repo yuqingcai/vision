@@ -10,9 +10,9 @@ class ResNet50Backbone(Model):
                  weights="imagenet", 
                  **kwargs):
         super().__init__(**kwargs)
+        
         self.input_layer = keras.Input(shape=input_shape, 
-                                       batch_size=batch_size,
-                                       dtype='float32')
+                                       batch_size=batch_size)
         self.base_model = keras.applications.ResNet50(
             include_top=False,
             weights=weights,

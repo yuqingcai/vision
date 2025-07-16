@@ -46,7 +46,7 @@ def loss_classifier_reg_fn(
         keep = tf.logical_or(pos_mask, neg_mask)
         keep_indices = tf.where(keep)[:, 0]
         if tf.size(keep_indices) == 0:
-            tf.print('No valid proposals found, classifier loss returning zero.')
+            # tf.print('No valid proposals found, classifier loss returning zero.')
             return tf.constant(0.0, dtype=tf.float32)
 
         sel_logits = tf.gather(class_logits_pred_valid, keep_indices)
