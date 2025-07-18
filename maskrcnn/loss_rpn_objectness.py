@@ -54,7 +54,6 @@ def loss_rpn_objectness_fn(
         sampled_labels = tf.gather(labels, sampled_inds)
         sampled_logits = tf.gather(objectness_logits_valid, sampled_inds)
 
-        # compute loss
         loss = tf.cond(
             tf.size(sampled_labels) > 0,
             lambda: tf.reduce_mean(
@@ -68,7 +67,7 @@ def loss_rpn_objectness_fn(
 
         return loss
 
-    loss = tf.map_fn(
+    losses = tf.map_fn(
         lambda args: loss_per_image(
             args[0], 
             args[1], 
@@ -87,4 +86,4 @@ def loss_rpn_objectness_fn(
         ),
     )
     
-    return tf.reduce_mean(loss)
+    return tf.reduce_mean(losses)

@@ -58,7 +58,7 @@ def loss_classifier_reg_fn(
         )
         return loss
 
-    loss = tf.map_fn(
+    losses = tf.map_fn(
         lambda args: loss_per_image(
             args[0], 
             args[1], 
@@ -79,4 +79,4 @@ def loss_classifier_reg_fn(
         ),
     )
 
-    return tf.reduce_mean(loss)
+    return tf.reduce_mean(losses)

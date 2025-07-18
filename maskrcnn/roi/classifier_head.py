@@ -23,72 +23,37 @@ class ROIClassifierHead(layers.Layer):
             dtype=tf.float32
             )
     
-    def call(self, features, valid_mask, features_size_pred):
+    def call(self, features, valid_mask):
         """features shape: [B, N, S, S, F]
         valid_mask shape: [B, N]
         where B is batch size, N is number of ROIs,
         S is the size of the ROI (e.g., 7 for 7x7),
         and F is the feature dimension (e.g., 256).
-        features_size_pred is the number of predicted class 
-        logits per image.
         """
+        B = tf.shape(features)[0]
+        N = tf.shape(features)[1]
+        S = tf.shape(features)[2]
+        F = tf.shape(features)[4]
 
-        def class_logits_per_image(features, valid_mask):
-            features_valid = tf.boolean_mask(features, valid_mask)
-            valid_indices = tf.boolean_mask(
-                tf.range(tf.shape(features)[0]), 
-                valid_mask
-            )
+        # flatten features to shape: [B, N, S * S * F]
+        features_flat = tf.reshape(features, [B, N, S * S * F])
 
-            pad_indices = tf.boolean_mask(
-                tf.range(tf.shape(features)[0]), 
-                tf.logical_not(valid_mask)
-            )
+        # valid_mask_float shape: [B, N, 1]
+        valid_mask_float = tf.cast(valid_mask, tf.float32)
+        valid_mask_float = tf.expand_dims(valid_mask_float, axis=-1)
+        
+        # class_logits shape: [B, N, num_classes]
+        x = self.fc1(features_flat)
+        x = self.fc2(x)
+        class_logits = self.class_logits_pred(x)  
 
-            # flatten features to shape [ M, feature_dim ]
-            shape = tf.shape(features_valid)
-            feature_dim = shape[1] * shape[2] * shape[3]
-            x = tf.reshape(features_valid, [ -1,  feature_dim ])
-            x = self.fc1(x)
-            x = self.fc2(x)
-            class_logits = self.class_logits_pred(x)
+        # mask invalid class logits, set to -1e8
+        # This is to ensure that invalid ROIs do not contribute to the loss.
+        class_logits = class_logits * valid_mask_float + \
+            (1.0 - valid_mask_float) * (-1e8)
 
-            class_logits = tf.pad(
-                class_logits, 
-                [[0, tf.shape(pad_indices)[0]], [0, 0]], 
-                constant_values=tf.constant(0.0, dtype=tf.float32)
-            )
+        # tf.print('class_logits:', tf.shape(class_logits))
 
-            indices = tf.concat([valid_indices, pad_indices], axis=0)
-            indices_sorted = tf.argsort(indices, axis=0)
-            class_logits = tf.gather(class_logits, indices_sorted)
-
-            # class_logits shape: [ M, num_classes ]
-            return class_logits
-
-        results = tf.map_fn(
-            lambda args: class_logits_per_image(
-                args[0], 
-                args[1]
-            ),
-            elems=(
-                features, 
-                valid_mask
-            ),
-            fn_output_signature=(
-                tf.TensorSpec(
-                    shape=(
-                        features_size_pred, 
-                        self.num_classes
-                    ), 
-                    # mixed_precision, using tf.float16
-                    dtype=tf.float32
-                )
-            )
-        )
-
-        # tf.print('class_logits:', tf.shape(results))
-
-        # results shape: [B, features_size_pred, num_classes]
-        return results
+        # class_logits shape: [B, N, num_classes]
+        return class_logits  
     

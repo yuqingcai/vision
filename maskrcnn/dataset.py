@@ -332,11 +332,11 @@ def preprocess(batch, min_size, max_size):
         )
     )
 
-
     batch['image'] = images
     batch['size'] = resizes
     batch['bbox'] = bboxes_resized
     batch['mask'] = masks
+
     
     return batch
 

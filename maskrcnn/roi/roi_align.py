@@ -85,7 +85,7 @@ class ROIAlign(layers.Layer):
                 stride,
                 level=level
             )
-
+            
             all_indices.append(roi_indices)
             all_features.append(features)
         

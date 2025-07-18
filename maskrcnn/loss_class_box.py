@@ -85,7 +85,7 @@ def loss_class_box_reg_fn(
         return tf.reduce_mean(tf.reduce_sum(loss, axis=1))
     
     
-    loss = tf.map_fn(
+    losses = tf.map_fn(
         lambda args: loss_per_image(
             args[0], 
             args[1], 
@@ -106,4 +106,4 @@ def loss_class_box_reg_fn(
         ),
     )
 
-    return tf.reduce_mean(loss)
+    return tf.reduce_mean(losses)

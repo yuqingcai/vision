@@ -42,80 +42,37 @@ class ROIMaskHead(layers.Layer):
 
         self.resolution = roi_output_size * 2
 
-    def call(self, features, valid_mask, features_size_pred):
+    def call(self, features, valid_mask):
         """features shape: [B, N, S, S, F]
         valid_mask shape: [B, N]
         where B is batch size, N is number of ROIs,
         S is the size of the ROI (e.g., 14 for 14x14),
         and F is the feature dimension (e.g., 256).
-        features_size_pred is the number of predicted class 
-        logits per image.
         """
-
-        def masks_per_image(features, valid_mask):
-            features_valid = tf.boolean_mask(features, valid_mask)
-            valid_indices = tf.boolean_mask(
-                tf.range(tf.shape(features)[0]), 
-                valid_mask
-            )
-
-            pad_indices = tf.boolean_mask(
-                tf.range(tf.shape(features)[0]), 
-                tf.logical_not(valid_mask)
-            )
-
-            # x shape [ M, H, W, C ]
-            x = features_valid
-            for conv in self.conv_layers:
-                x = conv(x)
-            x = self.upsample(x)
-            masks = self.mask_pred(x)
-
-            masks = tf.pad(
-                masks, 
-                [[0, tf.shape(pad_indices)[0]], [0, 0], [0, 0], [0, 0]], 
-                constant_values=tf.constant(0.0, dtype=tf.float32)
-            )
-
-            indices = tf.concat([valid_indices, pad_indices], axis=0)
-            indices_sorted = tf.argsort(indices, axis=0)
-            masks = tf.gather(masks, indices_sorted)
-
-            # masks shape: [ M, resolution, resolution, num_classes ]
-            return masks
-
+        B = tf.shape(features)[0]
+        N = tf.shape(features)[1]
+        S = tf.shape(features)[2]
+        F = tf.shape(features)[4]
         
-        results = tf.map_fn(
-            lambda args: masks_per_image(
-                args[0], 
-                args[1]
-            ),
-            elems=(
-                features, 
-                valid_mask
-            ),
-            fn_output_signature=(
-                tf.TensorSpec(
-                    shape=(
-                        features_size_pred, 
-                        self.resolution, 
-                        self.resolution, 
-                        self.num_classes), 
-                    dtype=tf.float32,
-                )
-            )
+        # valid_mask_float shape: [B, N, 1]
+        valid_mask_float = tf.cast(valid_mask, tf.float32)
+        valid_mask_float = tf.reshape(valid_mask_float, [B, N, 1, 1, 1])
+        
+        # masks shape [num_valid, resolution, resolution, num_classes]
+        x = tf.reshape(features, [B*N, S, S, F])
+        for conv in self.conv_layers:
+            x = conv(x)
+        x = self.upsample(x)
+        masks = self.mask_pred(x)
+
+        # masks shape: [B, N, resolution, resolution, num_classes]
+        masks = tf.reshape(
+            masks, 
+            [B, N, self.resolution, self.resolution, self.num_classes]
         )
-
-        # tf.print(
-        #     'ROIMaskHead', 
-        #     'masks:', tf.shape(results),
-        # )
+        masks = masks * valid_mask_float
         
-        # results shape: [
-        #   B, 
-        #   features_size_pred, 
-        #   resolution, 
-        #   resolution, 
-        #   num_classes
-        # ]
-        return results
+        # tf.print('masks:', tf.shape(masks))
+        # masks_padded: [B, N, resolution, resolution, num_classes]
+        
+        return masks

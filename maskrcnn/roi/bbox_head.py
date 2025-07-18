@@ -23,71 +23,38 @@ class ROIBBoxHead(layers.Layer):
             dtype=tf.float32
         )
 
-    def call(self, features, valid_mask, features_size_pred):
+    def call(self, features, valid_mask):
         """features shape: [B, N, S, S, F]
         valid_mask shape: [B, N]
         where B is batch size, N is number of ROIs,
         S is the size of the ROI (e.g., 7 for 7x7),
         and F is the feature dimension (e.g., 256).
-        features_size_pred is the number of predicted bounding 
-        boxes per image.
         """
+        B = tf.shape(features)[0]
+        N = tf.shape(features)[1]
+        S = tf.shape(features)[2]
+        F = tf.shape(features)[4]
+        feature_dim = S * S * F
 
-        def bbox_deltas_per_image(features, valid_mask):
-            features_valid = tf.boolean_mask(features, valid_mask)
-            valid_indices = tf.boolean_mask(
-                tf.range(tf.shape(features)[0]), 
-                valid_mask
-            )
+        # flatten features to shape: [B, N, S * S * F]
+        features_flat = tf.reshape(features, [B, N, feature_dim])
 
-            pad_indices = tf.boolean_mask(
-                tf.range(tf.shape(features)[0]), 
-                tf.logical_not(valid_mask)
-            )
+        # valid_mask_float shape: [B, N, 1]
+        valid_mask_float = tf.cast(valid_mask, tf.float32)
+        valid_mask_float = tf.expand_dims(valid_mask_float, axis=-1)
 
-            # flatten features to shape [ M, feature_dim ]
-            shape = tf.shape(features_valid)
-            feature_dim = shape[1] * shape[2] * shape[3]
-            x = tf.reshape(features_valid, [ -1,  feature_dim ])
-            x = self.fc1(x)
-            x = self.fc2(x)
-            bbox_deltas = self.bbox_pred(x)
+        # bbox_deltas shape: [B, N, num_classes * 4]
+        x = self.fc1(features_flat)
+        x = self.fc2(x)
+        bbox_deltas = self.bbox_pred(x)
 
-            bbox_deltas = tf.pad(
-                bbox_deltas, 
-                [[0, tf.shape(pad_indices)[0]], [0, 0]], 
-                constant_values=tf.constant(0.0, dtype=tf.float32)
-            )
+        # mask invalid bbox_deltas, set to -1e8
+        # This is to ensure that invalid ROIs do not contribute to the loss.
+        bbox_deltas = bbox_deltas * valid_mask_float + \
+            (1.0 - valid_mask_float) * (-1e8)
 
-            indices = tf.concat([valid_indices, pad_indices], axis=0)
-            indices_sorted = tf.argsort(indices, axis=0)
-            bbox_deltas = tf.gather(bbox_deltas, indices_sorted)
+        # tf.print('bbox_deltas:', tf.shape(bbox_deltas))
 
-            # bbox_deltas shape: [M, num_classes * 4]
-            return bbox_deltas
-        
-        results = tf.map_fn(
-            lambda args: bbox_deltas_per_image(
-                args[0], 
-                args[1]
-            ),
-            elems=(
-                features, 
-                valid_mask
-            ),
-            fn_output_signature=(
-                tf.TensorSpec(
-                    shape=(
-                        features_size_pred, 
-                        self.num_classes*4
-                    ), 
-                    # mixed_precision, using tf.float16
-                    dtype=tf.float32
-                )
-            )
-        )
+        # bbox_deltas shape: [B, N, num_classes * 4]
+        return bbox_deltas
 
-        # tf.print('bbox_deltas:', tf.shape(results))
-        
-        # results shape: [B, features_size_pred, num_classes * 4]
-        return results

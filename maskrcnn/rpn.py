@@ -192,134 +192,102 @@ class ProposalGenerator(layers.Layer):
         self.nms_thresh = nms_thresh
         self.min_size = min_size
 
-
     def call(self, anchors, image_sizes, objectness_logits, bbox_deltas):
+        # decode bbox
+        # a_x, a_y are the center coordinates of the anchors
+        # a_w, a_h are the width and height of the anchors
+        a_w = anchors[..., 2] - anchors[..., 0]
+        a_h = anchors[..., 3] - anchors[..., 1]
+        a_x = anchors[..., 0] + 0.5 * a_w
+        a_y = anchors[..., 1] + 0.5 * a_h
 
-        # select top-k proposals per image
-        def topk_per_image(anchors, image_size, objectness_logits, bbox_deltas):
-            
-            # decode bbox
-            # a_x, a_y are the center coordinates of the anchors
-            # a_w, a_h are the width and height of the anchors
-            a_w = anchors[:, 2] - anchors[:, 0]
-            a_h = anchors[:, 3] - anchors[:, 1]
-            a_x = anchors[:, 0] + 0.5 * a_w
-            a_y = anchors[:, 1] + 0.5 * a_h
+        # t_x, t_y are the offsets to the center coordinates
+        # t_w, t_h are the log-scaled width and height
+        t_x = bbox_deltas[..., 0]
+        t_y = bbox_deltas[..., 1]
+        t_w = bbox_deltas[..., 2]
+        t_h = bbox_deltas[..., 3]
 
-            # t_x, t_y are the offsets to the center coordinates
-            # t_w, t_h are the log-scaled width and height
-            t_x = bbox_deltas[:, 0]
-            t_y = bbox_deltas[:, 1]
-            t_w = bbox_deltas[:, 2]
-            t_h = bbox_deltas[:, 3]
+        # p_x, p_y are the predicted center coordinates
+        # p_w, p_h are the predicted width and height
+        # tf.clip_by_value is used to limit the range of t_w and t_h
+        # to prevent too large or too small boxes
+        p_x = a_x + t_x * a_w
+        p_y = a_y + t_y * a_h
+        p_w = a_w * tf.exp(tf.clip_by_value(t_w, -10.0, 10.0))
+        p_h = a_h * tf.exp(tf.clip_by_value(t_h, -10.0, 10.0))
 
-            # p_x, p_y are the predicted center coordinates
-            # p_w, p_h are the predicted width and height
-            # tf.clip_by_value is used to limit the range of t_w and t_h
-            # to prevent too large or too small boxes
-            p_x = a_x + t_x * a_w
-            p_y = a_y + t_y * a_h
-            p_w = a_w * tf.exp(tf.clip_by_value(t_w, -10.0, 10.0))
-            p_h = a_h * tf.exp(tf.clip_by_value(t_h, -10.0, 10.0))
+        # x_1, y_1, x_2, y_2 are the coordinates of the proposals
+        x_1 = p_x - 0.5 * p_w
+        y_1 = p_y - 0.5 * p_h
+        x_2 = p_x + 0.5 * p_w
+        y_2 = p_y + 0.5 * p_h
+        proposals = tf.stack([x_1, y_1, x_2, y_2], axis=-1)
+        
+        # Clip proposals to image size
+        # proposals shape is [N, num_anchors, 4]
+        height = tf.expand_dims(tf.cast(image_sizes[:, 0], tf.float32), axis=-1)
+        width = tf.expand_dims(tf.cast(image_sizes[:, 1], tf.float32), axis=-1)
+        proposals = tf.stack([
+            tf.clip_by_value(proposals[..., 0], 0, width - 1),
+            tf.clip_by_value(proposals[..., 1], 0, height - 1),
+            tf.clip_by_value(proposals[..., 2], 0, width - 1),
+            tf.clip_by_value(proposals[..., 3], 0, height - 1)
+        ], axis=-1)  
+        
+        # Remove small boxes
+        # valid shape is [N, num_anchors]
+        ws = proposals[..., 2] - proposals[..., 0]
+        hs = proposals[..., 3] - proposals[..., 1]
+        valid = (ws >= self.min_size) & (hs >= self.min_size)
+        
+        # mask invalid proposals mask
+        mask = tf.cast(valid, tf.float32)
+        fg_scores = tf.sigmoid(objectness_logits[..., 0])
+        fg_scores = fg_scores * mask + (1.0 - mask) * (-1e8)
 
-            # x_1, y_1, x_2, y_2 are the coordinates of the proposals
-            x_1 = p_x - 0.5 * p_w
-            y_1 = p_y - 0.5 * p_h
-            x_2 = p_x + 0.5 * p_w
-            y_2 = p_y + 0.5 * p_h
-            proposals = tf.stack([x_1, y_1, x_2, y_2], axis=1)
-            
-            # clip proposals to the image size
-            height = tf.cast(image_size[0], tf.float32)
-            width  = tf.cast(image_size[1], tf.float32)
-            proposals = tf.stack([
-                tf.clip_by_value(proposals[:, 0], 0, width - 1),
-                tf.clip_by_value(proposals[:, 1], 0, height - 1),
-                tf.clip_by_value(proposals[:, 2], 0, width - 1),
-                tf.clip_by_value(proposals[:, 3], 0, height - 1)
-            ], axis=1)
+        # get tok-k pre nms proposals
+        # topk_indices shape: [N, M]
+        topk = tf.math.top_k(
+            fg_scores, 
+            k=tf.minimum(self.pre_nms_topk, tf.shape(fg_scores)[-1])
+        )
+        topk_indices = topk.indices
 
-            # remove small boxes
-            ws = proposals[:, 2] - proposals[:, 0]
-            hs = proposals[:, 3] - proposals[:, 1]
-            valid = tf.where((ws >= self.min_size) & (hs >= self.min_size))
-
-            # update proposals, objectness_logits and bbox_deltas
-            proposals = tf.gather(proposals, valid[:, 0])
-            objectness_logits = tf.gather(objectness_logits, valid[:, 0])
-            bbox_deltas = tf.gather(bbox_deltas, valid[:, 0])
-
-            fg_scores = tf.sigmoid(objectness_logits[:, 0])
-            # get tok-k pre nms proposals
-            top_k = tf.math.top_k(
-                fg_scores, 
-                k=tf.minimum(self.pre_nms_topk, tf.shape(fg_scores)[0])
-            )
-            
-            # update proposals, objectness_logits, bbox_deltas and fg_scores
-            proposals = tf.gather(proposals, top_k.indices)
-            objectness_logits = tf.gather(objectness_logits, top_k.indices)
-            bbox_deltas = tf.gather(bbox_deltas, top_k.indices)
-            fg_scores = tf.gather(fg_scores, top_k.indices)
-
-            # apply non-maximum suppression (NMS)
-            keep = tf.image.non_max_suppression(
-                proposals, 
-                fg_scores,
-                max_output_size=self.post_nms_topk,
-                iou_threshold=self.nms_thresh
-            )
-
-            # update proposals, objectness_logits, and bbox_deltas
-            proposals = tf.gather(proposals, keep)
-            objectness_logits = tf.gather(objectness_logits, keep)
-            bbox_deltas = tf.gather(bbox_deltas, keep)
-            
-            # pad proposals, objectness_logits and bbox_deltas to post_nms_topk
-            n = tf.shape(proposals)[0]
-            pad = self.post_nms_topk - n
-
-            def pad_fn():
-                proposals_pad = tf.pad(
-                    proposals, 
-                    [[0, pad], [0, 0]], 
-                    constant_values=0.0
-                )
-
-                objectness_logits_pad = tf.pad(
-                    objectness_logits, 
-                    [[0, pad], [0, 0]], 
-                    constant_values=1e-8
-                )
-                
-                bbox_deltas_pad = tf.pad(
-                    bbox_deltas, 
-                    [[0, pad], [0, 0]], 
-                    constant_values=0.0
-                )
-
-                valid_mask_pad = tf.range(self.post_nms_topk) < n
-
-                return proposals_pad, \
-                    objectness_logits_pad, \
-                    bbox_deltas_pad, \
-                    valid_mask_pad
-
-            def no_pad_fn():
-                valid_mask = tf.range(self.post_nms_topk) < n
-                return proposals, objectness_logits, bbox_deltas, valid_mask
-            
-            return tf.cond(
-                pad > 0, 
-                pad_fn, 
-                no_pad_fn
-            )
-
-
-        # results: (proposals, objectness_logits, bbox_deltas, valid_mask)
+        # Gather topk proposals
+        proposals = tf.gather(
+            proposals, 
+            topk_indices, 
+            axis=1, 
+            batch_dims=1
+        )
+        objectness_logits = tf.gather(
+            objectness_logits, 
+            topk_indices, 
+            axis=1, 
+            batch_dims=1
+        )
+        bbox_deltas = tf.gather(
+            bbox_deltas, 
+            topk_indices, 
+            axis=1, 
+            batch_dims=1
+        )
+        fg_scores = tf.gather(
+            fg_scores, 
+            topk_indices, 
+            axis=1, 
+            batch_dims=1
+        )
+        
         results = tf.map_fn(
-            lambda args: topk_per_image(args[0], args[1], args[2], args[3]),
-            elems=(anchors, image_sizes, objectness_logits, bbox_deltas),
+            lambda args: self.nms_per_image(
+                args[0], 
+                args[1], 
+                args[2], 
+                args[3]
+            ),
+            elems=(proposals, objectness_logits, bbox_deltas, fg_scores),
             fn_output_signature=(
                 tf.TensorSpec(shape=(self.post_nms_topk, 4), dtype=tf.float32),
                 tf.TensorSpec(shape=(self.post_nms_topk, 1), dtype=tf.float32),
@@ -327,8 +295,12 @@ class ProposalGenerator(layers.Layer):
                 tf.TensorSpec(shape=(self.post_nms_topk, ), dtype=tf.bool),
             )
         )
-        
-        # proposals, objectness_logits, bbox_deltas, valid_mask = results
+        # proposals shape: [N, post_nms_topk, 4]
+        # objectness_logits shape: [N, post_nms_topk, 1]
+        # bbox_deltas shape: [N, post_nms_topk, 4]
+        # valid_mask shape: [N, post_nms_topk]
+        proposals, objectness_logits, bbox_deltas, valid_mask = results
+
         # tf.print(
         #     'ProposalGenerator',
         #     'proposals :', tf.shape(proposals),
@@ -337,5 +309,60 @@ class ProposalGenerator(layers.Layer):
         #     'valid_mask :', tf.shape(valid_mask)
         # )
 
-        return results
+        return proposals, objectness_logits, bbox_deltas, valid_mask
+    
+    def nms_per_image(self, 
+                      proposals, 
+                      objectness_logits, 
+                      bbox_deltas, 
+                      fg_scores):
+        keep = tf.image.non_max_suppression(
+                proposals, 
+                fg_scores,
+                max_output_size=self.post_nms_topk,
+                iou_threshold=self.nms_thresh
+            )
+        proposals = tf.gather(proposals, keep)
+        objectness_logits = tf.gather(objectness_logits, keep)
+        bbox_deltas = tf.gather(bbox_deltas, keep)
+        
+        # pad proposals, objectness_logits and bbox_deltas to post_nms_topk
+        n = tf.shape(proposals)[0]
+        pad = self.post_nms_topk - n
+
+        def pad_fn():
+            proposals_pad = tf.pad(
+                proposals, 
+                [[0, pad], [0, 0]], 
+                constant_values=0.0
+            )
+
+            objectness_logits_pad = tf.pad(
+                objectness_logits, 
+                [[0, pad], [0, 0]], 
+                constant_values=1e-8
+            )
+            
+            bbox_deltas_pad = tf.pad(
+                bbox_deltas, 
+                [[0, pad], [0, 0]], 
+                constant_values=0.0
+            )
+
+            valid_mask_pad = tf.range(self.post_nms_topk) < n
+
+            return proposals_pad, \
+                objectness_logits_pad, \
+                bbox_deltas_pad, \
+                valid_mask_pad
+
+        def no_pad_fn():
+            valid_mask = tf.range(self.post_nms_topk) < n
+            return proposals, objectness_logits, bbox_deltas, valid_mask
+        
+        return tf.cond(
+            pad > 0, 
+            pad_fn, 
+            no_pad_fn
+        )
     

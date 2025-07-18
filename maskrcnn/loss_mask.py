@@ -73,7 +73,7 @@ def loss_mask_fn(
         # squeeze the last dimension
         # gt_masks_cropped: [N, M, M, 1] -> [N, M, M]
         gt_masks_cropped = tf.squeeze(gt_masks_cropped, axis=-1)
-
+        
         # pick up the masks corresponding to the gt_labels
         # masks_pred_pos: [N, M, M, C] -> [N, C, M, M]
         masks_trans = tf.transpose(masks_pred_pos, [0, 3, 1, 2]) # [N, C, M, M]
@@ -95,7 +95,7 @@ def loss_mask_fn(
         return loss
     
     
-    loss = tf.map_fn(
+    losses = tf.map_fn(
         lambda args: loss_per_image(
             args[0], 
             args[1], 
@@ -117,5 +117,5 @@ def loss_mask_fn(
             dtype=tf.float32
         ),
     )
-
-    return loss
+    
+    return tf.reduce_mean(losses)

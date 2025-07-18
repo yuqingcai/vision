@@ -14,7 +14,7 @@ import itertools
 import random
 from tensorflow.keras import mixed_precision
 
-os.environ["GPU_ENABLE"] = "TRUE"
+os.environ["GPU_ENABLE"] = "FALSE"
 
 if os.environ.get("GPU_ENABLE", "FALSE") == "FALSE":
     tf.config.set_visible_devices([], 'GPU')
@@ -46,13 +46,26 @@ if __name__ == '__main__':
         optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
     )
     model.summary()
-    
-    epochs = 10
-    t_0 = time.time()
+
+
+    epochs = 1
+    global_step = 0
+
+    writer = tf.summary.create_file_writer('logs')
+    tf.profiler.experimental.start('logs')
+
     for epoch in range(epochs):
+        t_0 = time.time()
         for step, batch in enumerate(ds_train):
+            tf.profiler.experimental.Trace("train", step_num=global_step, _r=1)
             t_1 = time.time()
-            loss = model.train_step(batch)
+            loss = model.train_step(
+                batch['image'],
+                batch['size'],
+                batch['bbox'],
+                batch['mask'],
+                batch['label'],
+            )
             d0 = time.time() - t_0
             d1 = time.time() - t_1
             print(f'epoch {epoch}, step {step}, '
@@ -63,6 +76,17 @@ if __name__ == '__main__':
                   f'l_mask: {loss["loss_mask"]:.4f}, '
                   f'l_total: {loss["loss_total"]:.4f}, '
                   f'setp_t: {d1:.2f}s, '
-                  f'total_t: {d0:.2f}s'
+                  f'total_t: {d0:.2f}s '
+                  f'av_t: {d0/(step+1):.2f}s '
             )
+
+            with writer.as_default():
+                tf.summary.scalar('loss/total', loss["loss_total"], step=global_step)
+            writer.flush()
+            global_step += 1
+            if step == 2:
+                break
+        
+        tf.profiler.experimental.stop()
+        
         model.reset_metrics()
