@@ -303,6 +303,7 @@ def preprocess(batch, min_size, max_size):
     )
     
     padding_size = max_size_in_batch(resizes)
+    tf.print('padding_size', padding_size)
     
     # mixed_precision, using tf.float16
     images = tf.map_fn(
@@ -331,13 +332,12 @@ def preprocess(batch, min_size, max_size):
             dtype=tf.uint8
         )
     )
-
+    
     batch['image'] = images
     batch['size'] = resizes
     batch['bbox'] = bboxes_resized
     batch['mask'] = masks
 
-    
     return batch
 
 

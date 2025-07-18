@@ -35,9 +35,11 @@ def loss_rpn_objectness_fn(
         objectness_logits_valid = tf.squeeze(
             objectness_logits_valid, axis=-1
         )
+        
+        gt_boxes = gt_boxes.to_tensor()
 
         # Find the best matching ground truth for each proposal
-        ious = compute_iou(proposals_valid, gt_boxes.to_tensor())
+        ious = compute_iou(proposals_valid, gt_boxes)
         best_gt_ious = tf.reduce_max(ious, axis=1)
         pos_mask = best_gt_ious >= iou_pos_thresh
         neg_mask = best_gt_ious < iou_neg_thresh

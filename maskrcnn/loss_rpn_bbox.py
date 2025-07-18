@@ -29,7 +29,10 @@ def loss_rpn_box_reg_fn(
         proposals_valid = tf.boolean_mask(proposals, valid_mask)
         bbox_deltas_pred_valid = tf.boolean_mask(bbox_deltas_pred, valid_mask)
          # Find the best matching ground truth for each proposal
-        ious = compute_iou(proposals_valid, gt_boxes.to_tensor())
+        
+        gt_boxes = gt_boxes.to_tensor()
+
+        ious = compute_iou(proposals_valid, gt_boxes)
         best_gt_inds = tf.argmax(ious, axis=1)
         best_gt_ious = tf.reduce_max(ious, axis=1)
         pos_mask = best_gt_ious >= iou_pos_thresh
@@ -41,7 +44,7 @@ def loss_rpn_box_reg_fn(
             proposals_pos = tf.gather(proposals_valid, pos_inds)
             bbox_deltas_pred_pos = tf.gather(bbox_deltas_pred_valid, pos_inds)
             best_gt_inds_pos = tf.gather(best_gt_inds, pos_inds)
-            gt_boxes_pos = tf.gather(gt_boxes.to_tensor(), best_gt_inds_pos)
+            gt_boxes_pos = tf.gather(gt_boxes, best_gt_inds_pos)
             
             # compute the target deltas
             px, py, pw, ph = (proposals_pos[:, 0] + proposals_pos[:, 2]) * 0.5, \

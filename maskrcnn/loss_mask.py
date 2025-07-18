@@ -24,6 +24,7 @@ def loss_mask_fn(
             masks_pred, 
             valid_mask
         )
+
         gt_bboxes = gt_bboxes.to_tensor()
         gt_masks = gt_masks.to_tensor()
 

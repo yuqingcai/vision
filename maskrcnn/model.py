@@ -197,7 +197,7 @@ class MaskRCNN(Model):
         super().compile(*args, **kwargs)
         self.optimizer = optimizer
 
-    @tf.function(reduce_retracing=True,)
+    @tf.function(reduce_retracing=True)
     def train_step(self, images, sizes, gt_bboxes, gt_masks, gt_labels):
 
         # tf.print('images shape:', tf.shape(images), 'origin sizes:', sizes)

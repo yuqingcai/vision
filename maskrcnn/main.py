@@ -47,17 +47,10 @@ if __name__ == '__main__':
     )
     model.summary()
 
-
-    epochs = 1
-    global_step = 0
-
-    writer = tf.summary.create_file_writer('logs')
-    tf.profiler.experimental.start('logs')
-
+    epochs = 10
     for epoch in range(epochs):
         t_0 = time.time()
         for step, batch in enumerate(ds_train):
-            tf.profiler.experimental.Trace("train", step_num=global_step, _r=1)
             t_1 = time.time()
             loss = model.train_step(
                 batch['image'],
@@ -79,14 +72,5 @@ if __name__ == '__main__':
                   f'total_t: {d0:.2f}s '
                   f'av_t: {d0/(step+1):.2f}s '
             )
-
-            with writer.as_default():
-                tf.summary.scalar('loss/total', loss["loss_total"], step=global_step)
-            writer.flush()
-            global_step += 1
-            if step == 2:
-                break
-        
-        tf.profiler.experimental.stop()
         
         model.reset_metrics()

@@ -22,6 +22,7 @@ def loss_classifier_reg_fn(
             class_logits_pred, 
             valid_mask
         )
+        
         gt_boxes = gt_boxes.to_tensor()
 
          # Find the best matching ground truth for each proposal

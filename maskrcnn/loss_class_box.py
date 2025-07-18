@@ -24,6 +24,7 @@ def loss_class_box_reg_fn(
             bbox_deltas_pred, 
             valid_mask
         )
+        
         gt_bboxes = gt_bboxes.to_tensor()
         
         # Find the best matching ground truth for each proposal
