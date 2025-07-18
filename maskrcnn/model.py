@@ -125,7 +125,7 @@ class MaskRCNN(Model):
         c2, c3, c4, c5 = self.backbone(images, training=training)
 
         p2, p3, p4, p5 = self.fpn([c2, c3, c4, c5])
-        
+
         anchors = self.anchor_generator(
             feature_maps=[p2, p3, p4, p5],
             strides=self.fpn.strides(),
