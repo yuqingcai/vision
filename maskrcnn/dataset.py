@@ -74,6 +74,7 @@ def load_image_info(coco, img_ids, img_dir, id_to_index):
         
         entries.append({
             'file_path' : file_path, 
+            'id' : img_info['id'],
             'size' :  (height, width), 
             'bbox' : bboxes,
             'label' : labels,
@@ -263,6 +264,10 @@ def generator(entries):
                 entry['file_path'], 
                 dtype=tf.string
             ),
+            'id': tf.constant(
+                entry['id'], 
+                dtype=tf.int32
+            ),
             'size': tf.constant(
                 entry['size'], 
                 dtype=tf.int32
@@ -303,7 +308,6 @@ def preprocess(batch, min_size, max_size):
     )
     
     padding_size = max_size_in_batch(resizes)
-    tf.print('padding_size', padding_size)
     
     # mixed_precision, using tf.float16
     images = tf.map_fn(
@@ -353,12 +357,14 @@ def coco_category_id_index(coco):
     
     return id_to_index
 
-def create_dataset(ann_file, img_dir, batch_size=4, shuffle=False, 
-                   min_size=800, max_size=1333):
+def create_dataset(ann_file, 
+                   img_dir, 
+                   batch_size=4,
+                   min_size=800, 
+                   max_size=1333):
     coco = COCO(ann_file)
 
     id_index = coco_category_id_index(coco)
-    
     img_ids = coco.getImgIds()
     entries = load_image_info(coco, img_ids, img_dir, id_index)
     
@@ -369,7 +375,10 @@ def create_dataset(ann_file, img_dir, batch_size=4, shuffle=False,
                 shape=(), 
                 dtype=tf.string
             ),
-
+            'id': tf.TensorSpec(
+                shape=(), 
+                dtype=tf.int32
+            ),
             'size': tf.TensorSpec(
                 shape=(2,), 
                 dtype=tf.int32
@@ -388,13 +397,10 @@ def create_dataset(ann_file, img_dir, batch_size=4, shuffle=False,
             'rle': tf.TensorSpec(
                 shape=(None,), 
                 dtype=tf.string
-            ),
+            )
         })
     
-    if shuffle:
-        ds = ds.shuffle(buffer_size=len(entries))
-    
-    print(f"Dataset size: {len(entries)/batch_size}")
+    print(f"Dataset size: {len(entries)//batch_size}")
 
     ds = ds.ragged_batch(batch_size)
     
@@ -402,4 +408,5 @@ def create_dataset(ann_file, img_dir, batch_size=4, shuffle=False,
         partial(preprocess, min_size=min_size, max_size=max_size), 
         num_parallel_calls=tf.data.AUTOTUNE)
     ds = ds.prefetch(tf.data.AUTOTUNE)
-    return ds
+
+    return ds, len(entries)

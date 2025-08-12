@@ -11,7 +11,7 @@ import numpy as np
 from dataset import create_dataset
 
 
-coco_root = '../../dataset/coco2017/'
+coco_root = '../../../dataset/coco2017/'
 train_img_dir = os.path.join(coco_root, 'train2017')
 ann_file = os.path.join(coco_root, 'annotations/instances_train2017.json')
 

@@ -9,8 +9,8 @@ from pycocotools.coco import COCO
 if __name__ == "__main__":
 
     # 加载数据集
-    annotations_file = './data/coco2017/annotations/instances_train2017.json'
-    image_files = './data/coco2017/train2017'
+    annotations_file = '../dataset/coco2017/annotations/instances_train2017.json'
+    image_files = '../dataset/coco2017/train2017'
     register_coco_instances("train_dataset", 
         {}, 
         annotations_file, 
@@ -26,7 +26,7 @@ if __name__ == "__main__":
     # 
     coco = COCO(annotations_file)
     image_ids = coco.getImgIds()
-    items_per_batch = 2
+    items_per_batch = 16
     epoch = 10
     max_iter = math.ceil(len(image_ids) / items_per_batch) * epoch
 
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     # 使用detectron2://ImageNetPretrained/MSRA/R-50.pkl初始化模型权重，
     # 但这个权重只给 backbone（ResNet-50 主干部分），不包括 FPN 和 
     # Mask R-CNN 头部。
-    # 这里的初始化包括了 backbone， FPN 和 Mask R-CNN 头部。
+    # 这里的初始化包括了 backbone，FPN 和 Mask R-CNN 头部。
     # 
     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
         "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
@@ -58,11 +58,12 @@ if __name__ == "__main__":
     cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128
     cfg.SOLVER.BASE_LR = 0.00025
 
-     # COCO类别数，如自定义数据集需修改
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = 80
+    # COCO类别数，如自定义数据集需修改
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = 81
 
-    cfg.OUTPUT_DIR = "./imagerec/output"
+    cfg.OUTPUT_DIR = "./output"
     os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
     trainer = DefaultTrainer(cfg)
     trainer.resume_or_load(resume=False)
     trainer.train()
+    

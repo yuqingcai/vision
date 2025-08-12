@@ -110,21 +110,34 @@ class MaskRCNN(Model):
             raise ValueError("backbone_type must be 'resnet50' or 'resnet101'")
     
     
-    def call(self, images, image_sizes, training=False):
+    def call(self, images, sizes, training=False):
         """rois shape: [B, (None), 4]
         features_class shape: [B, (None), 7, 7, 256]
         class_logits shape: [B, (None), 81]
         bbox_deltas shape: [B, (None), 81*4]
         features_mask shape: [B, (None), 14, 14, 256]
         masks shape: [B, (None), 28, 28, 80]
-        image_sizes is not equal to images.shape[:2] because
+        sizes is not equal to images.shape[:2] because
         images is padded, image_sizes is the original size (i.e the 
         size of the content in a padded image).
         """
         
-        c2, c3, c4, c5 = self.backbone(images, training=training)
+        c2, c3, c4, c5 = self.backbone(
+            images, 
+            training=training
+        )
 
         p2, p3, p4, p5 = self.fpn([c2, c3, c4, c5])
+
+        # if training == False:
+        #     print(f"model training == False -> c2: {c2.numpy()}")
+        #     print(f"model training == False -> c3: {c3.numpy()}")
+        #     print(f"model training == False -> c4: {c4.numpy()}")
+        #     print(f"model training == False -> c5: {c5.numpy()}")
+        #     print(f"model training == False -> p2: {p2.numpy()}")
+        #     print(f"model training == False -> p3: {p3.numpy()}")
+        #     print(f"model training == False -> p4: {p4.numpy()}")
+        #     print(f"model training == False -> p5: {p5.numpy()}")
 
         anchors = self.anchor_generator(
             feature_maps=[p2, p3, p4, p5],
@@ -132,11 +145,13 @@ class MaskRCNN(Model):
             base_sizes=self.fpn.base_sizes(),
             ratios=self.anchor_ratios, 
             scales=self.anchor_scales,
-            image_sizes=image_sizes
+            sizes=sizes
         )
 
-        rpn_objectness_logits, rpn_bbox_deltas = self.rpn_head(
-            [p2, p3, p4, p5], training=training
+        rpn_objectness_logits, \
+            rpn_bbox_deltas = self.rpn_head(
+            [p2, p3, p4, p5], 
+            training=training
         )
 
         proposals, \
@@ -144,17 +159,20 @@ class MaskRCNN(Model):
         rpn_bbox_deltas, \
         valid_mask = self.proposal_generator(
             anchors, 
-            image_sizes, 
+            sizes, 
             rpn_objectness_logits, 
-            rpn_bbox_deltas
+            rpn_bbox_deltas,
+            training=training
         )
-        
+
+
         # roi class and bbox head
         features = self.roi_align(
             feature_maps=[p2, p3, p4, p5], 
             rois=proposals, 
             valid_mask=valid_mask, 
-            roi_size_pred=self.post_nms_topk
+            roi_size_pred=self.post_nms_topk,
+            training=training
         )
 
         classifier_logits = self.classifier_head(
@@ -162,7 +180,7 @@ class MaskRCNN(Model):
             valid_mask, 
             training=training
         )
-        
+
         class_bbox_deltas = self.class_spec_bbox_head(
             features, 
             valid_mask,
@@ -174,7 +192,8 @@ class MaskRCNN(Model):
             feature_maps=[p2, p3, p4, p5], 
             rois=proposals,
             valid_mask=valid_mask,
-            roi_size_pred=self.post_nms_topk
+            roi_size_pred=self.post_nms_topk,
+            training=training
         )
 
         class_masks = self.mask_head(
@@ -197,100 +216,146 @@ class MaskRCNN(Model):
         super().compile(*args, **kwargs)
         self.optimizer = optimizer
 
+    def build(self, input_shape):
+        super().build(input_shape)
+        self.gradient_accumulator = [
+            tf.Variable(tf.zeros_like(var), trainable=False) \
+                for var in self.trainable_variables
+        ]
+
     @tf.function(reduce_retracing=True)
-    def train_step(self, images, sizes, gt_bboxes, gt_masks, gt_labels):
+    def train_step(self, accumulation_steps, iterator):
 
-        # tf.print('images shape:', tf.shape(images), 'origin sizes:', sizes)
+        mean_loss_rpn_objectness_reg = 0.0
+        mean_loss_rpn_box_reg = 0.0
+        mean_loss_classifier_reg = 0.0
+        mean_loss_class_spec_box_reg = 0.0
+        mean_loss_mask = 0.0
+        mean_loss_total = 0.0
 
-        with tf.GradientTape() as tape:
+        for i in tf.range(accumulation_steps):
+            # Get the next batch of data
+            batch = iterator.get_next()
 
-            proposals, \
-            valid_mask, \
-            rpn_objectness_logits, \
-            rpn_bbox_deltas, \
-            classifier_logits, \
-            class_bbox_deltas, \
-            class_masks = self.call(images, sizes, training=True)
+            images = batch['image']     # shape: [B, H, W, C]
+            sizes = batch['size']       # shape: [B, 2]
+            gt_bboxes = batch['bbox']   # shape: [B, (None), 4]
+            gt_masks = batch['mask']    # shape: [B, (None), H, W]
+            gt_labels = batch['label']  # shape: [B, (None)]
 
-            loss_rpn_objectness_reg = loss_rpn_objectness_fn(
-                proposals,
-                valid_mask,
-                rpn_objectness_logits,
-                gt_bboxes
-            )
-            
-            loss_rpn_box_reg = loss_rpn_box_reg_fn(
-                proposals,
-                valid_mask,
-                rpn_bbox_deltas,
-                gt_bboxes
-            )
+            with tf.GradientTape() as tape:
+                proposals, \
+                    valid_mask, \
+                    rpn_objectness_logits, \
+                    rpn_bbox_deltas, \
+                    classifier_logits, \
+                    class_bbox_deltas, \
+                    class_masks = self.call(images, sizes, training=True)
 
-            loss_classifier_reg = loss_classifier_reg_fn(
-                proposals, 
-                valid_mask,
-                classifier_logits, 
-                gt_labels, 
-                gt_bboxes
-            )
+                loss_rpn_objectness_reg = loss_rpn_objectness_fn(
+                    proposals,
+                    valid_mask,
+                    rpn_objectness_logits,
+                    gt_bboxes
+                )
+                
+                loss_rpn_box_reg = loss_rpn_box_reg_fn(
+                    proposals,
+                    valid_mask,
+                    rpn_bbox_deltas,
+                    gt_bboxes
+                )
 
-            loss_class_spec_box_reg = loss_class_box_reg_fn(
-                proposals, 
-                valid_mask, 
-                class_bbox_deltas, 
-                gt_labels, 
-                gt_bboxes
-            )
-            
-            loss_mask = loss_mask_fn(
-                proposals, 
-                valid_mask, 
-                class_masks, 
-                gt_labels, 
-                gt_bboxes, 
-                gt_masks
-            )
-            
-            loss_total = loss_rpn_objectness_reg + \
-                loss_rpn_box_reg + \
-                loss_classifier_reg + \
-                loss_class_spec_box_reg + \
+                loss_classifier_reg = loss_classifier_reg_fn(
+                    proposals, 
+                    valid_mask,
+                    classifier_logits, 
+                    gt_labels, 
+                    gt_bboxes
+                )
+
+                loss_class_spec_box_reg = loss_class_box_reg_fn(
+                    proposals, 
+                    valid_mask, 
+                    class_bbox_deltas, 
+                    gt_labels, 
+                    gt_bboxes
+                )
+                
+                loss_mask = loss_mask_fn(
+                    proposals, 
+                    valid_mask, 
+                    class_masks, 
+                    gt_labels, 
+                    gt_bboxes, 
+                    gt_masks
+                )
+
+                # reduce losses by accumulation steps
+                loss_total = (loss_rpn_objectness_reg + \
+                    loss_rpn_box_reg + \
+                    loss_classifier_reg + \
+                    loss_class_spec_box_reg + \
+                    loss_mask) / accumulation_steps
+
+            # Backpropagation and accumulation
+            grads = tape.gradient(loss_total, self.trainable_variables)
+            for acc, grad in zip(self.gradient_accumulator, grads):
+                if grad is not None:
+                    acc.assign_add(grad)
+
+            # accumulate loss
+            mean_loss_rpn_objectness_reg += loss_rpn_objectness_reg
+            mean_loss_rpn_box_reg += loss_rpn_box_reg
+            mean_loss_classifier_reg += loss_classifier_reg
+            mean_loss_class_spec_box_reg += loss_class_spec_box_reg
+            mean_loss_mask += loss_mask
+            mean_loss_total += (
+                loss_rpn_objectness_reg + 
+                loss_rpn_box_reg + 
+                loss_classifier_reg + 
+                loss_class_spec_box_reg + 
                 loss_mask
+            )
 
-            # tf.print(
-            #     'proposals', proposals.dtype,
-            #     'valid_mask', valid_mask.dtype,
-            #     'rpn_objectness_logits', rpn_objectness_logits.dtype,
-            #     'rpn_bbox_deltas', rpn_bbox_deltas.dtype,
-            #     'classifier_logits', classifier_logits.dtype,
-            #     'class_bbox_deltas', class_bbox_deltas.dtype,
-            #     'class_masks', class_masks.dtype,
-            #     'loss_rpn_objectness_reg', loss_rpn_objectness_reg.dtype,
-            #     'loss_rpn_box_reg', loss_rpn_box_reg.dtype,
-            #     'loss_classifier_reg', loss_classifier_reg.dtype,
-            #     'loss_class_spec_box_reg', loss_class_spec_box_reg.dtype,
-            #     'loss_mask', loss_mask.dtype,
-            #     'loss_total', loss_total.dtype
-            # )
+        # update weights
+        self.optimizer.apply_gradients(
+            zip(
+                [acc.read_value() for acc in self.gradient_accumulator], 
+                self.trainable_variables
+            )
+        )
 
-        grads = tape.gradient(loss_total, self.trainable_variables)
+        for acc in self.gradient_accumulator:
+            acc.assign(tf.zeros_like(acc))
 
-        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+        # mean loss
+        mean_loss_rpn_objectness_reg /= accumulation_steps
+        mean_loss_rpn_box_reg /= accumulation_steps
+        mean_loss_classifier_reg /= accumulation_steps
+        mean_loss_class_spec_box_reg /= accumulation_steps
+        mean_loss_mask /= accumulation_steps
+        mean_loss_total /= accumulation_steps
         
         # Update metrics
         self.loss_rpn_objectness_reg_tracker.update_state(
-            loss_rpn_objectness_reg
+            mean_loss_rpn_objectness_reg
         )
-        self.loss_rpn_box_reg_tracker.update_state(loss_rpn_box_reg)
+        self.loss_rpn_box_reg_tracker.update_state(
+            mean_loss_rpn_box_reg
+            )
         self.loss_classifier_reg_tracker.update_state(
-            loss_classifier_reg
+            mean_loss_classifier_reg
         )
         self.loss_class_spec_box_reg_tracker.update_state(
-            loss_class_spec_box_reg
+            mean_loss_class_spec_box_reg
         )
-        self.loss_class_spec_mask_reg_tracker.update_state(loss_mask)
-
-        self.loss_total_tracker.update_state(loss_total)
+        self.loss_class_spec_mask_reg_tracker.update_state(
+            mean_loss_mask
+        )
+        self.loss_total_tracker.update_state(
+            mean_loss_total
+        )
         
         return {
             'loss_objectness': self.loss_rpn_objectness_reg_tracker.result(),

@@ -37,7 +37,7 @@ def loss_rpn_objectness_fn(
         )
         
         gt_boxes = gt_boxes.to_tensor()
-
+        
         # Find the best matching ground truth for each proposal
         ious = compute_iou(proposals_valid, gt_boxes)
         best_gt_ious = tf.reduce_max(ious, axis=1)

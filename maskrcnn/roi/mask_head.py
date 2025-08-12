@@ -42,7 +42,7 @@ class ROIMaskHead(layers.Layer):
 
         self.resolution = roi_output_size * 2
 
-    def call(self, features, valid_mask):
+    def call(self, features, valid_mask, training):
         """features shape: [B, N, S, S, F]
         valid_mask shape: [B, N]
         where B is batch size, N is number of ROIs,

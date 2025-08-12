@@ -17,7 +17,7 @@ class AnchorGenerator(layers.Layer):
              base_sizes, 
              ratios, 
              scales, 
-             image_sizes):
+             sizes):
         
         ratios = tf.constant(ratios, dtype=tf.float32)
         scales = tf.constant(scales, dtype=tf.float32)
@@ -35,7 +35,7 @@ class AnchorGenerator(layers.Layer):
                     args[0], args[1], ratios, scales, stride, 
                     base_size,
                 ),
-                elems=(feature_map, image_sizes),
+                elems=(feature_map, sizes),
                 fn_output_signature=tf.TensorSpec(
                     shape=(None, 4), 
                     dtype=tf.float32
@@ -56,7 +56,7 @@ class AnchorGenerator(layers.Layer):
     def anchors_per_feature_map(
             self, 
             feature_map, 
-            image_size, 
+            size, 
             ratios, 
             scales, 
             stride, 
@@ -102,8 +102,8 @@ class AnchorGenerator(layers.Layer):
         anchors = tf.reshape(anchors, [K * A, 4])
 
         # clip anchors to the image size
-        height = tf.cast(image_size[0], tf.float32)
-        width = tf.cast(image_size[1], tf.float32)
+        height = tf.cast(size[0], tf.float32)
+        width = tf.cast(size[1], tf.float32)
         anchors = tf.stack([
             tf.clip_by_value(anchors[:, 0], 0, width - 1),
             tf.clip_by_value(anchors[:, 1], 0, height - 1),
@@ -143,7 +143,7 @@ class RPNHead(layers.Layer):
             dtype=tf.float32
         )
     
-    def call(self, feature_maps):
+    def call(self, feature_maps, training):
         objectness_logits = []
         bbox_deltas = []
         
@@ -192,7 +192,13 @@ class ProposalGenerator(layers.Layer):
         self.nms_thresh = nms_thresh
         self.min_size = min_size
 
-    def call(self, anchors, image_sizes, objectness_logits, bbox_deltas):
+    def call(self, 
+             anchors, 
+             sizes, 
+             objectness_logits, 
+             bbox_deltas, 
+             training):
+        
         # decode bbox
         # a_x, a_y are the center coordinates of the anchors
         # a_w, a_h are the width and height of the anchors
@@ -226,8 +232,8 @@ class ProposalGenerator(layers.Layer):
         
         # Clip proposals to image size
         # proposals shape is [N, num_anchors, 4]
-        height = tf.expand_dims(tf.cast(image_sizes[:, 0], tf.float32), axis=-1)
-        width = tf.expand_dims(tf.cast(image_sizes[:, 1], tf.float32), axis=-1)
+        height = tf.expand_dims(tf.cast(sizes[:, 0], tf.float32), axis=-1)
+        width = tf.expand_dims(tf.cast(sizes[:, 1], tf.float32), axis=-1)
         proposals = tf.stack([
             tf.clip_by_value(proposals[..., 0], 0, width - 1),
             tf.clip_by_value(proposals[..., 1], 0, height - 1),

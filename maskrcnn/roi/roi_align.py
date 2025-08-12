@@ -19,7 +19,13 @@ class ROIAlign(layers.Layer):
         self.feature_strides = feature_strides
         self.feature_size = feature_size
 
-    def call(self, feature_maps, rois, valid_mask, roi_size_pred):
+    def call(self, 
+             feature_maps, 
+             rois, 
+             valid_mask, 
+             roi_size_pred, 
+             training):
+        
         """feature_maps is a list of feature map, each feature map is 
         a [B, H, W, C] tensor.
         rois is a [B, N, 4] tensor, where each row is [x1, y1, x2, y2]

@@ -21,9 +21,9 @@ class ROIClassifierHead(layers.Layer):
             num_classes, 
             activation=None,
             dtype=tf.float32
-            )
+        )
     
-    def call(self, features, valid_mask):
+    def call(self, features, valid_mask, training):
         """features shape: [B, N, S, S, F]
         valid_mask shape: [B, N]
         where B is batch size, N is number of ROIs,
@@ -55,5 +55,6 @@ class ROIClassifierHead(layers.Layer):
         # tf.print('class_logits:', tf.shape(class_logits))
 
         # class_logits shape: [B, N, num_classes]
+
         return class_logits  
     

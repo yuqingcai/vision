@@ -1,8 +1,21 @@
 import tensorflow as tf
 
 def compute_iou(boxes1, boxes2):
-    """
+    """ 
+    IOU = |A ∩ B| / |A ∪ B|
+    
     boxes1: [P, 4], boxes2: [G, 4]
+
+    sample: boxes1 = [[0, 0, 2, 2], [1, 1, 3, 3]]
+            boxes2 = [[0, 0, 2, 2], [2, 2, 3, 3]]
+            iou = [
+                    [1.0,           0.0], 
+                    [0.14285715,    0.25]
+                ]
+            boxes1[0], boxes2[0] IOU=1.0
+            boxes1[0], boxes2[1] IOU=0.0
+            boxes1[1], boxes2[0] IOU=0.14285715
+            boxes1[1], boxes2[1] IOU=0.25
     """
     boxes1 = tf.expand_dims(boxes1, 1)  # [P,1,4]
     boxes2 = tf.expand_dims(boxes2, 0)  # [1,G,4]
@@ -24,10 +37,11 @@ def compute_iou(boxes1, boxes2):
     union_area = area1 + area2 - inter_area
     
     iou = inter_area / tf.maximum(union_area, 1e-8)
-
+    
     # shape [P, G]
     return iou
 
+ 
 import tensorflow as tf
 
 def bilinear_interpolate_batch(images, coords, batch_indices):
@@ -135,3 +149,32 @@ def image_sample_and_resize(images, boxes, box_indices, output_size, sampling_ra
     avg_vals = tf.reduce_mean(sampled_vals, axis=3)                        # [M, h_out, w_out, C]
 
     return avg_vals
+
+def decode_bbox(proposal, bbox_delta):
+    """
+    proposal: shape [4] (x1, y1, x2, y2)
+    bbox_delta: shape [4] (tx, ty, tw, th)
+    return: shape [4] (x1, y1, x2, y2) after decode
+    """
+    # proposal 转为中心点和宽高
+    px = (proposal[0] + proposal[2]) / 2.0
+    py = (proposal[1] + proposal[3]) / 2.0
+    pw = proposal[2] - proposal[0]
+    ph = proposal[3] - proposal[1]
+
+    # delta分量
+    tx, ty, tw, th = bbox_delta
+
+    # 应用回归
+    gx = tx * pw + px
+    gy = ty * ph + py
+    gw = tf.exp(tw) * pw
+    gh = tf.exp(th) * ph
+
+    # 转回x1y1x2y2
+    x1 = gx - gw / 2.0
+    y1 = gy - gh / 2.0
+    x2 = gx + gw / 2.0
+    y2 = gy + gh / 2.0
+
+    return tf.stack([x1, y1, x2, y2])
