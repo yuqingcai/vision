@@ -11,14 +11,16 @@ if __name__ == "__main__":
     # 加载数据集
     annotations_file = '../dataset/coco2017/annotations/instances_train2017.json'
     image_files = '../dataset/coco2017/train2017'
-    register_coco_instances("train_dataset", 
+    register_coco_instances(
+        "train_dataset", 
         {}, 
         annotations_file, 
-        image_files)
-
+        image_files
+    )
 
     # 计算迭代次数 max_iter，detectron2 的迭代次数是指所有 epoch 的迭代次数。
-    # 例如，假设每个 epoch 有 1000 个 batch，epoch 数为 10，则 max_iter = 1000 * 10 = 10000。
+    # 例如，假设每个 epoch 有 1000 个 batch，epoch 数为 10，
+    # max_iter = 1000 * 10 = 10000。
     # 
     # 在深度学习训练中，最后一个 batch 不足 batch size 是很常见的情况。大多数
     # 框架（包括 Detectron2 和 PyTorch）会自动处理最后一个 batch 的图片数少于
@@ -52,7 +54,7 @@ if __name__ == "__main__":
     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
         "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
     )
-    
+
     cfg.SOLVER.IMS_PER_BATCH = items_per_batch
     cfg.SOLVER.MAX_ITER = max_iter
     cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128

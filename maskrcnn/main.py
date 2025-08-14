@@ -48,10 +48,10 @@ if __name__ == '__main__':
         if x.device_type == 'GPU':
             print(f"{x.name}: {x.physical_device_desc}")
 
-    batch_size = 4
+    batch_size = 2
     min_size = 800
-    max_size = 800
-    accumulation_steps = 4
+    max_size = 1000
+    accumulation_steps = 8
     
     ds_train, train_len = create_dataset(
         ann_file=ann_file_train,
@@ -72,7 +72,7 @@ if __name__ == '__main__':
     model = MaskRCNN(
         input_shape=(None, None, 3),
         batch_size=batch_size,
-        backbone_type='resnet50'
+        backbone_type='resnet101'
     )
     
     model.compile(
@@ -101,7 +101,7 @@ if __name__ == '__main__':
 
     ds_train = ds_train.shuffle(buffer_size=1000)
 
-    epochs = 1
+    epochs = 10
     for epoch in range(epochs):
         t_0 = time.time()
         iterator = iter(ds_train)
