@@ -5,14 +5,15 @@ from tensorflow.keras import layers, Model
 class ResNet50Backbone(Model):
     def __init__(self, 
                  input_shape, 
-                 batch_size, 
                  trainable=True,
                  weights="imagenet", 
                  **kwargs):
         super().__init__(**kwargs)
         
-        self.input_layer = keras.Input(shape=input_shape, 
-                                       batch_size=batch_size)
+        self.input_layer = keras.Input(
+                shape=input_shape, 
+                batch_size=None
+        )
         self.base_model = keras.applications.ResNet50(
             include_top=False,
             weights=weights,
@@ -41,14 +42,15 @@ class ResNet50Backbone(Model):
 class ResNet101Backbone(Model):
     def __init__(self, 
                  input_shape, 
-                 batch_size, 
                  trainable=True,
                  weights="imagenet", 
                  **kwargs):
         super().__init__(**kwargs)
         
-        self.input_layer = keras.Input(shape=input_shape, 
-                                       batch_size=batch_size)
+        self.input_layer = keras.Input(
+                shape=input_shape, 
+                batch_size=None
+        )
         
         self.base_model = keras.applications.ResNet101(
             include_top=False,

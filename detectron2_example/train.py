@@ -5,17 +5,36 @@ from detectron2.engine import DefaultTrainer
 from detectron2.config import get_cfg
 from detectron2 import model_zoo
 from pycocotools.coco import COCO
+from detectron2.evaluation import COCOEvaluator
+
+class MyTrainer(DefaultTrainer):
+    @classmethod
+    def build_evaluator(cls, cfg, dataset_name, output_folder=None):
+        if output_folder is None:
+            output_folder = os.path.join(cfg.OUTPUT_DIR, "inference")
+        return COCOEvaluator(dataset_name, cfg, False, output_folder)
 
 if __name__ == "__main__":
 
     # 加载数据集
-    annotations_file = '../dataset/coco2017/annotations/instances_train2017.json'
-    image_files = '../dataset/coco2017/train2017'
+    train_annotations_file = '../../dataset/coco2017/annotations/instances_train2017.json'
+    train_image_files = '../../dataset/coco2017/train2017'
+
+    val_annotations_file = '../../dataset/coco2017/annotations/instances_val2017.json'
+    val_image_files = '../../dataset/coco2017/val2017'
+
     register_coco_instances(
         "train_dataset", 
         {}, 
-        annotations_file, 
-        image_files
+        train_annotations_file, 
+        train_image_files
+    )
+
+    register_coco_instances(
+        "val_dataset", 
+        {}, 
+        val_annotations_file, 
+        val_image_files
     )
 
     # 计算迭代次数 max_iter，detectron2 的迭代次数是指所有 epoch 的迭代次数。
@@ -26,7 +45,7 @@ if __name__ == "__main__":
     # 框架（包括 Detectron2 和 PyTorch）会自动处理最后一个 batch 的图片数少于
     # 你设置的 IMS_PER_BATCH（即 batch size）的情况。
     # 
-    coco = COCO(annotations_file)
+    coco = COCO(train_annotations_file)
     image_ids = coco.getImgIds()
     items_per_batch = 16
     epoch = 10
@@ -41,9 +60,11 @@ if __name__ == "__main__":
     cfg.merge_from_file(model_zoo.get_config_file(
         "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
     ))
-    cfg.DATASETS.TRAIN = ("train_dataset",)
-    cfg.DATASETS.TEST = ()
+    cfg.DATASETS.TRAIN = ('train_dataset',)
+    cfg.DATASETS.TEST = ('val_dataset',)
     cfg.DATALOADER.NUM_WORKERS = 2
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.05
+    cfg.MODEL.DEVICE = "cuda"
 
     # 这里初始化模型权重，事实上mask_rcnn_R_50_FPN_3x.yaml文件中已经指定
     # 使用detectron2://ImageNetPretrained/MSRA/R-50.pkl初始化模型权重，
@@ -51,21 +72,22 @@ if __name__ == "__main__":
     # Mask R-CNN 头部。
     # 这里的初始化包括了 backbone，FPN 和 Mask R-CNN 头部。
     # 
-    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
-        "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
-    )
-
+    # 这里的 model_zoo.get_checkpoint_url 有问题！！！
+    # cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
+    #     "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
+    # )
+    cfg.MODEL.WEIGHTS = '/home/qing/.torch/iopath_cache/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x/137849600/model_final_f10217.pkl'
+    
     cfg.SOLVER.IMS_PER_BATCH = items_per_batch
     cfg.SOLVER.MAX_ITER = max_iter
-    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128
     cfg.SOLVER.BASE_LR = 0.00025
-
-    # COCO类别数，如自定义数据集需修改
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = 81
+    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = 80
+    cfg.TEST.EVAL_PERIOD = 1000  # 每1000次iter评估一次val集
 
     cfg.OUTPUT_DIR = "./output"
     os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
-    trainer = DefaultTrainer(cfg)
+    trainer = MyTrainer(cfg)
     trainer.resume_or_load(resume=False)
     trainer.train()
     

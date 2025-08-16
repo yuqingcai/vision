@@ -14,14 +14,12 @@ import os
 class MaskRCNN(Model):
     def __init__(self, 
                  input_shape, 
-                 batch_size, 
                  backbone_type='resnet50', 
                  **kwargs):
         super().__init__(**kwargs)
         
         self.backbone = self.build_backbone(
             input_shape, 
-            batch_size, 
             backbone_type
         )
         
@@ -65,17 +63,17 @@ class MaskRCNN(Model):
         )
 
         self.classifier_head = ROIClassifierHead(
-            num_classes=self.class_num + 1, # +1 for background class
+            num_classes=self.class_num
             hidden_dim=1024
         )
 
         self.class_spec_bbox_head = ROIBBoxHead(
-            num_classes=self.class_num + 1, # +1 for background class
+            num_classes=self.class_num
             hidden_dim=1024
         )
         
         self.mask_head = ROIMaskHead(
-            num_classes=self.class_num + 1, # +1 for background class
+            num_classes=self.class_num
             conv_dim=256,
             num_convs=4,
             roi_output_size=self.roi_align_mask.output_size
@@ -100,12 +98,12 @@ class MaskRCNN(Model):
             name='loss_total_tracker'
         )
     
-
-    def build_backbone(self, input_shape, batch_size, backbone_type):
+    
+    def build_backbone(self, input_shape, backbone_type):
         if backbone_type == 'resnet50':
-            return ResNet50Backbone(input_shape, batch_size)
+            return ResNet50Backbone(input_shape)
         elif backbone_type == 'resnet101':
-            return ResNet101Backbone(input_shape, batch_size)
+            return ResNet101Backbone(input_shape)
         else:
             raise ValueError("backbone_type must be 'resnet50' or 'resnet101'")
     
@@ -128,16 +126,6 @@ class MaskRCNN(Model):
         )
 
         p2, p3, p4, p5 = self.fpn([c2, c3, c4, c5])
-
-        # if training == False:
-        #     print(f"model training == False -> c2: {c2.numpy()}")
-        #     print(f"model training == False -> c3: {c3.numpy()}")
-        #     print(f"model training == False -> c4: {c4.numpy()}")
-        #     print(f"model training == False -> c5: {c5.numpy()}")
-        #     print(f"model training == False -> p2: {p2.numpy()}")
-        #     print(f"model training == False -> p3: {p3.numpy()}")
-        #     print(f"model training == False -> p4: {p4.numpy()}")
-        #     print(f"model training == False -> p5: {p5.numpy()}")
 
         anchors = self.anchor_generator(
             feature_maps=[p2, p3, p4, p5],
@@ -186,7 +174,7 @@ class MaskRCNN(Model):
             valid_mask,
             training=training
         )
-        
+
         # roi mask head
         features_mask = self.roi_align_mask(
             feature_maps=[p2, p3, p4, p5], 
@@ -236,13 +224,13 @@ class MaskRCNN(Model):
         for i in tf.range(accumulation_steps):
             # Get the next batch of data
             batch = iterator.get_next()
-
+            
             images = batch['image']     # shape: [B, H, W, C]
             sizes = batch['size']       # shape: [B, 2]
             gt_bboxes = batch['bbox']   # shape: [B, (None), 4]
             gt_masks = batch['mask']    # shape: [B, (None), H, W]
             gt_labels = batch['label']  # shape: [B, (None)]
-
+            
             with tf.GradientTape() as tape:
                 proposals, \
                     valid_mask, \
@@ -317,25 +305,39 @@ class MaskRCNN(Model):
                 loss_class_spec_box_reg + 
                 loss_mask
             )
+    
+        # reduce and sync
+        replica_ctx = tf.distribute.get_replica_context()
+        if replica_ctx is not None:
+            reduced_grads = [
+                replica_ctx.all_reduce('sum', acc.read_value()) \
+                    for acc in self.gradient_accumulator
+            ]
+            mean_loss_rpn_objectness_reg = replica_ctx.all_reduce('mean', mean_loss_rpn_objectness_reg) / accumulation_steps
+            mean_loss_rpn_box_reg = replica_ctx.all_reduce('mean', mean_loss_rpn_box_reg) / accumulation_steps
+            mean_loss_classifier_reg = replica_ctx.all_reduce('mean', mean_loss_classifier_reg) / accumulation_steps
+            mean_loss_class_spec_box_reg = replica_ctx.all_reduce('mean', mean_loss_class_spec_box_reg) / accumulation_steps
+            mean_loss_mask = replica_ctx.all_reduce('mean', mean_loss_mask) / accumulation_steps
+            mean_loss_total = replica_ctx.all_reduce('mean', mean_loss_total) / accumulation_steps
+        else:
+            reduced_grads = [
+                acc.read_value() for acc in self.gradient_accumulator
+            ]
+            mean_loss_rpn_objectness_reg /= accumulation_steps
+            mean_loss_rpn_box_reg /= accumulation_steps
+            mean_loss_classifier_reg /= accumulation_steps
+            mean_loss_class_spec_box_reg /= accumulation_steps
+            mean_loss_mask /= accumulation_steps
+            mean_loss_total /= accumulation_steps
 
         # update weights
         self.optimizer.apply_gradients(
-            zip(
-                [acc.read_value() for acc in self.gradient_accumulator], 
-                self.trainable_variables
-            )
+            zip(reduced_grads, self.trainable_variables)
         )
 
+        # clean gradient_accumulator
         for acc in self.gradient_accumulator:
             acc.assign(tf.zeros_like(acc))
-
-        # mean loss
-        mean_loss_rpn_objectness_reg /= accumulation_steps
-        mean_loss_rpn_box_reg /= accumulation_steps
-        mean_loss_classifier_reg /= accumulation_steps
-        mean_loss_class_spec_box_reg /= accumulation_steps
-        mean_loss_mask /= accumulation_steps
-        mean_loss_total /= accumulation_steps
         
         # Update metrics
         self.loss_rpn_objectness_reg_tracker.update_state(

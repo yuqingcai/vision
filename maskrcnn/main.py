@@ -36,10 +36,20 @@ def save_model(name):
     model.save(f'saved_model/{name}')
 
 
-def log(info):
-    print(info)
-    # with open("log.txt", "a", encoding="utf-8") as f:
-    #     f.write(info + "\n")
+def log_loss(epoch, step, loss, d0, d1):
+    print(
+        f'{time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())} '
+            f'epoch {epoch}, step {step}, '
+            f'l_objectness: {loss["loss_objectness"]:.4f}, '
+            f'l_rpn_box_reg: {loss["loss_rpn_box_reg"]:.4f}, '
+            f'l_class: {loss["loss_class"]:.4f}, '
+            f'l_box_reg: {loss["loss_box_reg"]:.4f}, '
+            f'l_mask: {loss["loss_mask"]:.4f}, '
+            f'l_total: {loss["loss_total"]:.4f}, '
+            f'setp_t: {d1:.2f}s, '
+            f'total_t: {d0:.2f}s '
+            f'av_t: {d0/(step+1):.2f}s '
+    )
 
 
 if __name__ == '__main__':
@@ -48,97 +58,88 @@ if __name__ == '__main__':
         if x.device_type == 'GPU':
             print(f"{x.name}: {x.physical_device_desc}")
 
-    batch_size = 2
+    
+    strategy = tf.distribute.MirroredStrategy(
+        devices=[''
+            '/device:GPU:0', 
+            '/device:GPU:1'
+        ]
+    )
+    
+    batch_size = 4
     min_size = 800
     max_size = 1000
     accumulation_steps = 8
-    
+
     ds_train, train_len = create_dataset(
-        ann_file=ann_file_train,
-        img_dir=img_dir_train,
-        batch_size=batch_size,
+        ann_file=ann_file_train, 
+        img_dir=img_dir_train, 
+        batch_size=batch_size, 
         min_size=min_size, 
-        max_size=max_size  
+        max_size=max_size
     )
+    ds_train = ds_train.shuffle(buffer_size=1000)
+    ds_train = strategy.experimental_distribute_dataset(ds_train)
     
     ds_validate, validate_len = create_dataset(
-        ann_file=ann_file_validate,
-        img_dir=img_dir_validate,
-        batch_size=batch_size,
+        ann_file=ann_file_validate, 
+        img_dir=img_dir_validate, 
+        batch_size=batch_size, 
         min_size=min_size, 
-        max_size=max_size 
-    )
-
-    model = MaskRCNN(
-        input_shape=(None, None, 3),
-        batch_size=batch_size,
-        backbone_type='resnet101'
+        max_size=max_size
     )
     
-    model.compile(
-        optimizer=tf.keras.optimizers.SGD(learning_rate=2e-2),
-    )
+    with strategy.scope():
+        num_gpus = strategy.num_replicas_in_sync                        
 
-    # using dummy input to create all parameters in model, otherwise 
-    # 'self.optimizer.apply_gradients(
-    #   zip(gradient_accumulator, self.trainable_variables)
-    # )' will failed because model's variables is not completre.
-    #
-    dummy_images = tf.zeros(
-        [batch_size, 800, 800, 3], 
-        dtype=tf.float32
-    )
-    dummy_sizes = tf.zeros(
-        [batch_size, 2], 
-        dtype=tf.int32
-    )
-    model(dummy_images, dummy_sizes, training=True)
-
-    model.summary()
-       
-    steps_per_epoch = train_len // batch_size //accumulation_steps
-    print(f'train steps per epoch: {steps_per_epoch}')
-
-    ds_train = ds_train.shuffle(buffer_size=1000)
-
-    epochs = 10
-    for epoch in range(epochs):
-        t_0 = time.time()
-        iterator = iter(ds_train)
-
-        for step in range(steps_per_epoch):
-            t_1 = time.time()
-
-            loss = model.train_step(accumulation_steps, iterator)
-            
-            d0 = time.time() - t_0
-            d1 = time.time() - t_1
-
-            info = (
-                f'{time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())} '
-                f'epoch {epoch}, step {step}, '
-                f'l_objectness: {loss["loss_objectness"]:.4f}, '
-                f'l_rpn_box_reg: {loss["loss_rpn_box_reg"]:.4f}, '
-                f'l_class: {loss["loss_class"]:.4f}, '
-                f'l_box_reg: {loss["loss_box_reg"]:.4f}, '
-                f'l_mask: {loss["loss_mask"]:.4f}, '
-                f'l_total: {loss["loss_total"]:.4f}, '
-                f'setp_t: {d1:.2f}s, '
-                f'total_t: {d0:.2f}s '
-                f'av_t: {d0/(step+1):.2f}s '
-            )
-            log(info)
-
-        validate(
-            epoch, 
-            model, 
-            ann_file_validate, 
-            ds_validate, 
-            validate_len, 
-            batch_size
+        model = MaskRCNN(
+            input_shape=(None, None, 3),
+            backbone_type='resnet101'
         )
         
-        model.reset_metrics()
-        del iterator
+        model.compile(
+            optimizer=tf.keras.optimizers.SGD(learning_rate=2e-2),
+        )
 
-        save_model(f'mask_rcnn_{batch_size}_{accumulation_steps}_{steps_per_epoch}_{epoch}.keras')
+        dummy_images = tf.zeros(
+            [batch_size//num_gpus, 800, 800, 3], 
+            dtype=tf.float32
+        )
+        dummy_sizes = tf.zeros(
+            [batch_size//num_gpus, 2], 
+            dtype=tf.int32
+        )
+        model(dummy_images, dummy_sizes, training=True)
+
+        model.summary()
+        
+        steps_per_epoch = train_len // batch_size //accumulation_steps
+        print(f'train steps per epoch: {steps_per_epoch}')
+        
+        epochs = 10
+        for epoch in range(epochs):
+            t_0 = time.time()
+            iterator = iter(ds_train)
+
+            for step in range(steps_per_epoch):
+                t_1 = time.time()
+
+                loss = strategy.run(model.train_step, args=(accumulation_steps, iterator))
+                
+                d0 = time.time() - t_0
+                d1 = time.time() - t_1
+
+                log_loss(epoch, step, loss, d0, d1)
+
+            model.reset_metrics()
+            del iterator
+            
+#            validate(
+#                epoch, 
+#                model, 
+#                ann_file_validate, 
+#                ds_validate, 
+#                validate_len, 
+#                batch_size
+#            )
+#            save_model(f'mask_rcnn_{batch_size}_{accumulation_steps}_{steps_per_epoch}_{epoch}.keras')
