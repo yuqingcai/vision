@@ -1,3 +1,15 @@
+import os
+import torch
+import math
+from detectron2.data.datasets import register_coco_instances
+from detectron2.engine import DefaultTrainer, \
+    default_argument_parser, launch
+from detectron2.config import get_cfg
+from detectron2 import model_zoo
+from pycocotools.coco import COCO
+from detectron2.evaluation import COCOEvaluator
+from detectron2.utils import comm
+
 class COCOTrainer(DefaultTrainer):
     @classmethod
     def build_evaluator(cls, cfg, dataset_name):
@@ -72,7 +84,7 @@ def main(args):
         torch.distributed.destroy_process_group()
 
 
-# nohup python -u train_dual.py --num-gpus 2 --num-machines 1 --machine-rank 0 --dist-url "auto" --resume True > train.log 2>&1 &
+# nohup python -u train.py --num-gpus 2 --num-machines 1 --machine-rank 0 --dist-url "auto" --resume True > train.log 2>&1 &
 if __name__ == "__main__":
     args = default_argument_parser().parse_args()
     launch(
