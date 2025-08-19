@@ -3,13 +3,16 @@ import torch
 from PIL import Image
 import numpy as np
 import detectron2
-from detectron2.engine import DefaultPredictor
+from detectron2.engine import DefaultPredictor, \
+    default_argument_parser, launch
 from detectron2.config import get_cfg
 from detectron2 import model_zoo
 from detectron2.utils.visualizer import Visualizer
 from detectron2.data import MetadataCatalog
 import torchvision
 import matplotlib.pyplot as plt
+import os
+from detectron2.utils import comm
 
 
 def detect_objects():
@@ -63,8 +66,26 @@ def show_version():
     print(torchvision.__version__)
 
 
+def main(args):
+    rank = comm.get_local_rank()
+    print(f"Process with local_rank: {rank} is running.")
+    print(f'args: {args}')
+
 if __name__ == "__main__":
-    show_version()
-    detect_objects()
+    # show_version()
+    # detect_objects()
 
-
+    # ckpt = torch.load(
+    #     "output/model_final.pth", 
+    #     map_location='cpu'
+    # )
+    # print(ckpt['iteration'])
+    args = default_argument_parser().parse_args()
+    launch(
+        main,
+        num_gpus_per_machine=args.num_gpus,
+        num_machines=args.num_machines,
+        machine_rank=args.machine_rank,
+        dist_url="auto",
+        args=(args,)
+    )

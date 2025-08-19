@@ -64,10 +64,9 @@ if __name__ == "__main__":
     #     config_file=model_zoo.get_config_file(
     #         "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
     #     ),
-    #     weights='/home/qing/.torch/iopath_cache/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x/137849600/model_final_f10217.pkl'
-    #     # weights=model_zoo.get_checkpoint_url(
-    #     #     "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
-    #     # )
+    #     weights=model_zoo.get_checkpoint_url(
+    #         "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
+    #     )
     # )
 
     # 验证 model_final.pth 权重文件
@@ -77,6 +76,6 @@ if __name__ == "__main__":
         config_file=model_zoo.get_config_file(
             'COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml'
         ),
-        weights='./output/model_final.pth'
+        weights='./output/model_0024999.pth'
     )
     
