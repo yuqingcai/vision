@@ -9,11 +9,32 @@ from detectron2 import model_zoo
 from pycocotools.coco import COCO
 from detectron2.evaluation import COCOEvaluator
 from detectron2.utils import comm
+from detectron2.utils.events import EventWriter, get_event_storage
+
+class CustomWriter(EventWriter):
+    def write(self):
+        storage = get_event_storage()
+        histories = storage.histories()
+        l = []
+        for k, v in histories.items():
+            l.append(f'{k}: {v}')
+        print('CustomWriter:', ', '.join(l))            
+
 
 class COCOTrainer(DefaultTrainer):
     @classmethod
     def build_evaluator(cls, cfg, dataset_name):
-        return COCOEvaluator(dataset_name, cfg, False)
+        return COCOEvaluator(dataset_name)
+
+    # @classmethod
+    # def test(cls, cfg, model, evaluators=None):
+    #     print('Testing model...')
+
+    # def build_writers(self):
+    #     writers = super().build_writers()
+    #     writers.append(CustomWriter())
+    #     return writers
+
 
 def setup(local_rank, args):
     # Register datasets
@@ -41,21 +62,23 @@ def setup(local_rank, args):
     items_per_batch = 16
     epoch = 36
     max_iter = math.ceil(len(image_ids) / items_per_batch) * epoch
+    lr = 0.02
 
-    # only main process prints
-    print(f'local_rank: {local_rank}')
-    print(f'image num: {len(image_ids)}')
-    print(f'items per batch: {items_per_batch}')
-    print(f'epoch num: {epoch}')
-    print(f'iteration num: {max_iter}')
-        
+    print(
+        f'local_rank: {local_rank}\n'
+        f'image num: {len(image_ids)}\n'
+        f'items per batch: {items_per_batch}\n'
+        f'epoch num: {epoch}\n'
+        f'iteration num: {max_iter}\n'
+    )
+    
     cfg = get_cfg()
     cfg.merge_from_file(model_zoo.get_config_file(
         "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
     ))
     cfg.DATASETS.TRAIN = ('train_dataset',)
     cfg.DATASETS.TEST = ('val_dataset',)
-    cfg.DATALOADER.NUM_WORKERS = 4 # 这里设置成4~8可提升速度
+    cfg.DATALOADER.NUM_WORKERS = 4
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.05
     cfg.MODEL.DEVICE = "cuda"
     # cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
@@ -64,12 +87,19 @@ def setup(local_rank, args):
     # total batch size, will be split
     cfg.SOLVER.IMS_PER_BATCH = items_per_batch
     cfg.SOLVER.MAX_ITER = max_iter
-    cfg.SOLVER.BASE_LR = 0.00025
+
+    # WARMUP_ITERS 步数内的 lr 会很小，逐步恢复到设定的 lr
+    cfg.SOLVER.WARMUP_ITERS = 1000
+    cfg.SOLVER.BASE_LR = lr / args.num_gpus
+    cfg.SOLVER.GAMMA = 0.1
+    cfg.SOLVER.CHECKPOINT_PERIOD = 5000
+    cfg.SOLVER.LOG_PERIOD = 20
     cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = 80
-    cfg.TEST.EVAL_PERIOD = 4000
+    cfg.TEST.EVAL_PERIOD = 5000
     cfg.OUTPUT_DIR = "./output"
     os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
+
     return cfg
 
 
@@ -77,6 +107,12 @@ def main(args):
     local_rank = comm.get_local_rank()
     cfg = setup(local_rank, args)
     trainer = COCOTrainer(cfg)
+
+    print(
+        f'optimizer: {type(trainer.optimizer).__name__}\n'
+        f'GAMMA: {cfg.SOLVER.GAMMA}\n'
+    )
+
     trainer.resume_or_load(resume=args.resume)
     trainer.train()
     
@@ -84,9 +120,11 @@ def main(args):
         torch.distributed.destroy_process_group()
 
 
-# nohup python -u train.py --num-gpus 2 --num-machines 1 --machine-rank 0 --dist-url "auto" --resume True > train.log 2>&1 &
+# nohup python -u train.py --num-gpus 2 --num-machines 1 --machine-rank 0 --dist-url "auto" --resume > train.log 2>&1 &
+# tensorboard --logdir output --host 10.0.0.7 --port 6006
 if __name__ == "__main__":
     args = default_argument_parser().parse_args()
+    print(args)
     launch(
         main,
         num_gpus_per_machine=args.num_gpus,
