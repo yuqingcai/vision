@@ -59,10 +59,10 @@ def setup(local_rank, args):
     # Calculate max_iter
     coco = COCO(train_annotations_file)
     image_ids = coco.getImgIds()
-    items_per_batch = 16
+    items_per_batch = 32
     epoch = 36
     max_iter = math.ceil(len(image_ids) / items_per_batch) * epoch
-    lr = 0.02
+    lr = 0.04
 
     print(
         f'local_rank: {local_rank}\n'

@@ -76,6 +76,6 @@ if __name__ == "__main__":
         config_file=model_zoo.get_config_file(
             'COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml'
         ),
-        weights='./output/model_0024999.pth'
+        weights='./output/model_final.pth'
     )
     
