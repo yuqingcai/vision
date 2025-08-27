@@ -28,8 +28,6 @@ class MaskRCNN(Model):
         self.anchor_scales = [1.0, 1.5, 2.0]
         self.fpn_feature_size = 256
         self.class_num = 80  # COCO dataset has 80 classes
-        self.pre_nms_topk = 2000
-        self.post_nms_topk = 1000
         self.roi_sample_ratio = 2
         
         self.fpn = FPNGenerator(feature_size=self.fpn_feature_size)
@@ -42,8 +40,8 @@ class MaskRCNN(Model):
             feature_size=self.fpn_feature_size)
         
         self.proposal_generator = ProposalGenerator(
-            pre_nms_topk=self.pre_nms_topk,
-            post_nms_topk=self.post_nms_topk,
+            pre_nms_topk=2000,
+            post_nms_topk=1000,
             nms_thresh=0.5,
             min_size=16
         )
@@ -159,7 +157,7 @@ class MaskRCNN(Model):
             feature_maps=[p2, p3, p4, p5], 
             rois=proposals, 
             valid_mask=valid_mask, 
-            roi_size_pred=self.post_nms_topk,
+            roi_size_pred=self.proposal_generator.post_nms_topk,
             training=training
         )
 
@@ -174,13 +172,13 @@ class MaskRCNN(Model):
             valid_mask,
             training=training
         )
-
+        
         # roi mask head
         features_mask = self.roi_align_mask(
             feature_maps=[p2, p3, p4, p5], 
             rois=proposals,
             valid_mask=valid_mask,
-            roi_size_pred=self.post_nms_topk,
+            roi_size_pred=self.proposal_generator.post_nms_topk,
             training=training
         )
 
