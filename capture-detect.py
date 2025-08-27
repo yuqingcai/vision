@@ -2,9 +2,10 @@ import cv2
 from ultralytics import YOLO
 
 
-model = YOLO("yolo/train7/weights/best.pt")
+model = YOLO("yolo/detect/train7/weights/best.pt")
 
-cap = cv2.VideoCapture('./IMG_1117_720.MOV')
+# cap = cv2.VideoCapture('./IMG_1117_720.MOV')
+cap = cv2.VideoCapture(0)
 
 if not cap.isOpened():
     print("cap open failed.")
