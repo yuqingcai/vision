@@ -38,10 +38,10 @@ class COCOTrainer(DefaultTrainer):
 
 def setup(local_rank, args):
     # Register datasets
-    train_annotations_file = '../../dataset/coco2017/annotations/instances_train2017.json'
-    train_image_files = '../../dataset/coco2017/coco/images/train2017'
-    val_annotations_file = '../../dataset/coco2017/annotations/instances_val2017.json'
-    val_image_files = '../../dataset/coco2017/coco/images/val2017'
+    train_annotations_file = '../../datasets/coco2017/annotations/instances_train2017.json'
+    train_image_files = '../../datasets/coco2017/coco/images/train2017'
+    val_annotations_file = '../../datasets/coco2017/annotations/instances_val2017.json'
+    val_image_files = '../../datasets/coco2017/coco/images/val2017'
 
     register_coco_instances(
         "train_dataset", 

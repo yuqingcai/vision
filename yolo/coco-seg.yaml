@@ -1,6 +1,6 @@
 path: /home/qing/project/NNDL/datasets/coco2017/coco
-train: train2017.txt
-val: val2017.txt
+train: images/train2017
+val: images/val2017
 
 # Classes
 names:
