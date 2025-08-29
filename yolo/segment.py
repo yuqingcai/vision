@@ -9,4 +9,3 @@ results = model.train(
     imgsz=640, 
     device=[0, 1]
 )
-
