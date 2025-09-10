@@ -2,7 +2,9 @@ import cv2
 from ultralytics import YOLO
 
 
-model = YOLO("detect/train7/weights/best.pt")
+# coco训练集产出的模型
+# model = YOLO("detect/train7/weights/best.pt")
+model = YOLO("detect/train17/weights/best.pt")
 
 # cap = cv2.VideoCapture('./IMG_1117_720.MOV')
 cap = cv2.VideoCapture(0)
