@@ -1,0 +1,7 @@
+path: /home/qing/project/NNDL/datasets/components_data_uncropped
+train: train.txt
+val: val.txt
+test: test.txt
+
+nc: 22
+names: ['battery','button','buzzer','capacitor','clock','connector','diode','display','fuse','heatsink','ic','inductor','led','pads','pins','potentiometer','relay','resistor','switch','transducer','transformer','transistor']

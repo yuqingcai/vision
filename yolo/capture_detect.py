@@ -2,6 +2,7 @@ import cv2
 from ultralytics import YOLO
 
 
+# coco训练集产出的模型
 # model = YOLO("detect/train7/weights/best.pt")
 model = YOLO("detect/train17/weights/best.pt")
 
