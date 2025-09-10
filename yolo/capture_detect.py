@@ -2,7 +2,8 @@ import cv2
 from ultralytics import YOLO
 
 
-model = YOLO("detect/train7/weights/best.pt")
+# model = YOLO("detect/train7/weights/best.pt")
+model = YOLO("detect/train17/weights/best.pt")
 
 # cap = cv2.VideoCapture('./IMG_1117_720.MOV')
 cap = cv2.VideoCapture(0)
@@ -11,8 +12,8 @@ if not cap.isOpened():
     print("cap open failed.")
     exit()
     
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+# cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+# cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
 while True:
     ret, frame = cap.read()
@@ -25,7 +26,7 @@ while True:
         xyxy = result.boxes.xyxy  # top-left-x, top-left-y, bottom-right-x, bottom-right-y
         names = [result.names[cls.item()] for cls in result.boxes.cls.int()]  # class name of each box
         confs = result.boxes.conf  # confidence score of each box
-
+        
         for i in range(len(names)):
             x1, y1, x2, y2 = map(int, xyxy[i])
             label = f"{names[i]} {confs[i]:.2f}"
